@@ -4,6 +4,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.Button
+import androidx.compose.material.ButtonDefaults
 import androidx.compose.material.Card
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
@@ -31,10 +33,10 @@ import androidx.health.connect.client.HealthConnectClient.Companion.SDK_UNAVAILA
 import com.example.healthconnectsample.presentation.component.InstalledMessage
 import com.example.healthconnectsample.presentation.component.NotInstalledMessage
 import com.example.healthconnectsample.presentation.component.NotSupportedMessage
+import com.example.healthconnectsample.worker.ChangeTokenManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-import java.time.LocalTime
 
 @Composable
 fun WelcomeScreen(
@@ -48,7 +50,6 @@ fun WelcomeScreen(
     var isWorkerActive by remember { mutableStateOf(false) }
     val currentOnAvailabilityCheck by rememberUpdatedState(onResumeAvailabilityCheck)
 
-    // Listener para re-chequear Health Connect
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
@@ -61,7 +62,6 @@ fun WelcomeScreen(
         }
     }
 
-    // Actualizar estado del Worker cada 30 segundos
     LaunchedEffect(Unit) {
         while (true) {
             try {
@@ -78,27 +78,16 @@ fun WelcomeScreen(
                     }
                 }
 
-                val currentTime = LocalTime.now()
-                val currentMinute = currentTime.hour * 60 + currentTime.minute
-                val minutesSinceLastSlot = currentMinute % 30
+                val currentMinute = System.currentTimeMillis() / (1000 * 60)
+                val minutesSinceLastSlot = (currentMinute % 30).toInt()
                 val minutesToNext = 30 - minutesSinceLastSlot
 
                 nextExportMinutes = minutesToNext.toLong()
 
-                val currentHour = currentTime.hour
-                if (currentHour in 5 until 21) {
-                    if (minutesToNext <= 5) {
-                        nextExportTime = "Próximo export: en $minutesToNext min"
-                    } else {
-                        nextExportTime = "Próximo export: ~$minutesToNext min"
-                    }
+                if (minutesToNext <= 5) {
+                    nextExportTime = "Próximo export: en $minutesToNext min"
                 } else {
-                    val hoursUntil5AM = if (currentHour < 5) {
-                        5 - currentHour
-                    } else {
-                        24 - currentHour + 5
-                    }
-                    nextExportTime = "Reanuda a las 5 AM (${hoursUntil5AM}h)"
+                    nextExportTime = "Próximo export: ~$minutesToNext min"
                 }
             } catch (e: Exception) {
                 nextExportTime = "Export automático activo"
@@ -129,7 +118,6 @@ fun WelcomeScreen(
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // Banner de export automático
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -174,7 +162,7 @@ fun WelcomeScreen(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Horario: 5 AM - 9 PM (cada 30 min)",
+                    text = "Cada 30 min, 24/7 - Solo cambios incrementales",
                     fontSize = 12.sp,
                     color = Color.White.copy(alpha = 0.7f),
                     textAlign = TextAlign.Center
@@ -208,9 +196,31 @@ fun WelcomeScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-        // Mensajes de estado de Health Connect (original)
+        Button(
+            onClick = {
+                ChangeTokenManager(context).clearToken()
+                android.widget.Toast.makeText(
+                    context,
+                    "Token reseteado. Próximo export será completo.",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            },
+            colors = ButtonDefaults.buttonColors(
+                backgroundColor = Color(0xFFFF6B6B)
+            ),
+            modifier = Modifier.fillMaxWidth(0.8f)
+        ) {
+            Text(
+                text = "🔄 Reset Export (Debug)",
+                color = Color.White,
+                fontSize = 14.sp
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
         when (healthConnectAvailability) {
             SDK_AVAILABLE -> InstalledMessage()
             SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED -> NotInstalledMessage()

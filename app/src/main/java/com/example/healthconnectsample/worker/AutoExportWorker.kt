@@ -39,7 +39,6 @@ class AutoExportWorker(
         try {
             Log.d(TAG, "Iniciando export automático 24/7...")
 
-            // Verificar Health Connect
             if (HealthConnectClient.getSdkStatus(context) != HealthConnectClient.SDK_AVAILABLE) {
                 Log.e(TAG, "Health Connect no disponible")
                 return@withContext Result.retry()
@@ -47,7 +46,6 @@ class AutoExportWorker(
 
             val healthConnectClient = HealthConnectClient.getOrCreate(context)
 
-            // Verificar permisos
             val grantedPermissions = healthConnectClient.permissionController.getGrantedPermissions()
             val requiredPermissions = setOf(
                 HealthPermission.getReadPermission(WeightRecord::class),
@@ -59,7 +57,6 @@ class AutoExportWorker(
                 return@withContext Result.failure()
             }
 
-            // LÓGICA DIFFERENTIAL: Primera vez vs cambios incrementales
             val isFirstExport = tokenManager.isFirstExport()
 
             if (isFirstExport) {
@@ -78,28 +75,21 @@ class AutoExportWorker(
         }
     }
 
-    /**
-     * Primera vez: Export completo + guarda token para próximas veces
-     */
     private suspend fun performFullExport(client: HealthConnectClient) {
         val healthConnectManager = HealthConnectManager(context)
 
         val endTime = Instant.now()
         val startTime = Instant.EPOCH
 
-        // Leer todos los datos
-        val exerciseData = readExerciseSessionsFiltered(healthConnectManager, startTime, endTime)
-        val weightData = readWeightRecordsFiltered(client, startTime, endTime)
+        val exerciseData = readExerciseSessions(healthConnectManager, startTime, endTime)
+        val weightData = readWeightRecords(client, startTime, endTime)
 
-        // Generar JSON completo
         val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"))
         val fileName = "health_data_AUTO_FULL_${timestamp}.json"
         val jsonContent = generateHealthJSON(weightData, exerciseData, "AUTO_FULL_EXPORT")
 
-        // Guardar en Downloads/HealthConnectExports
         saveToDownloads(fileName, jsonContent)
 
-        // IMPORTANTE: Obtener y guardar token para próximas veces
         val token = client.getChangesToken(
             ChangesTokenRequest(
                 recordTypes = setOf(WeightRecord::class, ExerciseSessionRecord::class)
@@ -109,12 +99,8 @@ class AutoExportWorker(
 
         Log.d(TAG, "Export completo: ${weightData.size} weight + ${exerciseData.size} exercises")
         Log.d(TAG, "Token guardado para próximos exports incrementales")
-        Log.d(TAG, "Archivo guardado: Downloads/$EXPORT_FOLDER/$fileName")
     }
 
-    /**
-     * Siguientes veces: Solo cambios desde último export
-     */
     private suspend fun performDifferentialExport(client: HealthConnectClient) {
         val savedToken = tokenManager.getChangesToken() ?: run {
             Log.e(TAG, "Token no encontrado, forzando export completo")
@@ -122,61 +108,55 @@ class AutoExportWorker(
             return
         }
 
-        // Obtener cambios desde último export
         val changesResponse = client.getChanges(savedToken)
 
         val weightChanges = mutableListOf<Map<String, Any?>>()
         val exerciseChanges = mutableListOf<Map<String, Any?>>()
         val deletions = mutableListOf<String>()
 
-        // Procesar cambios
         changesResponse.changes.forEach { change ->
             when (change) {
                 is UpsertionChange -> {
                     when (val record = change.record) {
                         is WeightRecord -> {
-                            if (record.metadata.dataOrigin.packageName == "com.sec.android.app.shealth") {
-                                weightChanges.add(mapOf(
-                                    "timestamp" to record.time.toString(),
-                                    "weight_kg" to record.weight.inKilograms,
-                                    "source" to record.metadata.dataOrigin.packageName,
-                                    "change_type" to "UPSERT"
-                                ))
-                            }
+                            weightChanges.add(mapOf(
+                                "timestamp" to record.time.toString(),
+                                "weight_kg" to record.weight.inKilograms,
+                                "source" to record.metadata.dataOrigin.packageName,
+                                "change_type" to "UPSERT"
+                            ))
                         }
                         is ExerciseSessionRecord -> {
-                            if (record.metadata.dataOrigin.packageName == "com.sec.android.app.shealth") {
-                                val durationMinutes = try {
-                                    java.time.Duration.between(record.startTime, record.endTime).toMinutes()
-                                } catch (e: Exception) { 0L }
+                            val durationMinutes = try {
+                                java.time.Duration.between(record.startTime, record.endTime).toMinutes()
+                            } catch (e: Exception) { 0L }
 
-                                if (durationMinutes >= 2) {
-                                    val healthConnectManager = HealthConnectManager(context)
-                                    val sessionData = try {
-                                        healthConnectManager.readAssociatedSessionData(record.metadata.id)
-                                    } catch (e: Exception) { null }
+                            if (durationMinutes >= 2) {
+                                val healthConnectManager = HealthConnectManager(context)
+                                val sessionData = try {
+                                    healthConnectManager.readAssociatedSessionData(record.metadata.id)
+                                } catch (e: Exception) { null }
 
-                                    if (sessionData != null) {
-                                        exerciseChanges.add(mapOf(
-                                            "session_id" to record.metadata.id,
-                                            "title" to (record.title ?: "Exercise Session"),
-                                            "exercise_type" to record.exerciseType,
-                                            "exercise_type_name" to getExerciseTypeName(record.exerciseType),
-                                            "exercise_emoji" to getExerciseTypeEmoji(record.exerciseType),
-                                            "start_time" to record.startTime.toString(),
-                                            "end_time" to record.endTime.toString(),
-                                            "duration_minutes" to (sessionData.totalActiveTime?.toMinutes() ?: durationMinutes),
-                                            "total_steps" to sessionData.totalSteps,
-                                            "distance_meters" to sessionData.totalDistance?.inMeters,
-                                            "calories_burned" to sessionData.totalEnergyBurned?.inCalories,
-                                            "avg_heart_rate" to sessionData.avgHeartRate,
-                                            "max_heart_rate" to sessionData.maxHeartRate,
-                                            "min_heart_rate" to sessionData.minHeartRate,
-                                            "data_origin" to record.metadata.dataOrigin.packageName,
-                                            "has_detailed_data" to true,
-                                            "change_type" to "UPSERT"
-                                        ))
-                                    }
+                                if (sessionData != null) {
+                                    exerciseChanges.add(mapOf(
+                                        "session_id" to record.metadata.id,
+                                        "title" to (record.title ?: "Exercise Session"),
+                                        "exercise_type" to record.exerciseType,
+                                        "exercise_type_name" to getExerciseTypeName(record.exerciseType),
+                                        "exercise_emoji" to getExerciseTypeEmoji(record.exerciseType),
+                                        "start_time" to record.startTime.toString(),
+                                        "end_time" to record.endTime.toString(),
+                                        "duration_minutes" to (sessionData.totalActiveTime?.toMinutes() ?: durationMinutes),
+                                        "total_steps" to sessionData.totalSteps,
+                                        "distance_meters" to sessionData.totalDistance?.inMeters,
+                                        "calories_burned" to sessionData.totalEnergyBurned?.inCalories,
+                                        "avg_heart_rate" to sessionData.avgHeartRate,
+                                        "max_heart_rate" to sessionData.maxHeartRate,
+                                        "min_heart_rate" to sessionData.minHeartRate,
+                                        "data_origin" to record.metadata.dataOrigin.packageName,
+                                        "has_detailed_data" to true,
+                                        "change_type" to "UPSERT"
+                                    ))
                                 }
                             }
                         }
@@ -188,35 +168,24 @@ class AutoExportWorker(
             }
         }
 
-        // Si no hay cambios, no generar archivo
         if (weightChanges.isEmpty() && exerciseChanges.isEmpty() && deletions.isEmpty()) {
             Log.d(TAG, "No hay cambios desde último export")
             tokenManager.saveChangesToken(changesResponse.nextChangesToken)
             return
         }
 
-        // Generar JSON con cambios incrementales
         val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"))
         val fileName = "health_data_AUTO_DIFF_${timestamp}.json"
         val jsonContent = generateDifferentialJSON(weightChanges, exerciseChanges, deletions)
 
-        // Guardar en Downloads/HealthConnectExports
         saveToDownloads(fileName, jsonContent)
-
-        // Guardar nuevo token para próxima vez
         tokenManager.saveChangesToken(changesResponse.nextChangesToken)
 
         Log.d(TAG, "Export diferencial: ${weightChanges.size} weight + ${exerciseChanges.size} exercises + ${deletions.size} deletions")
-        Log.d(TAG, "Archivo guardado: Downloads/$EXPORT_FOLDER/$fileName")
     }
 
-    /**
-     * Guarda archivo en Downloads/HealthConnectExports
-     * Autosync for Google Drive lo sube automáticamente
-     */
     private fun saveToDownloads(fileName: String, content: String) {
         try {
-            // Guardar en Downloads/HealthConnectExports
             val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
             val exportFolder = File(downloadsDir, EXPORT_FOLDER)
 
@@ -225,7 +194,6 @@ class AutoExportWorker(
                 Log.d(TAG, "Carpeta creada: ${exportFolder.absolutePath}")
             }
 
-            // Guardar archivo
             val file = File(exportFolder, fileName)
             FileWriter(file).use { writer ->
                 writer.write(content)
@@ -241,20 +209,16 @@ class AutoExportWorker(
         }
     }
 
-    private suspend fun readExerciseSessionsFiltered(
+    private suspend fun readExerciseSessions(
         healthConnectManager: HealthConnectManager,
         startTime: Instant,
         endTime: Instant
     ): List<Map<String, Any?>> {
         return try {
             val allExerciseRecords = healthConnectManager.readExerciseSessions(startTime, endTime)
-            val samsungHealthRecords = allExerciseRecords.filter { record ->
-                record.metadata.dataOrigin.packageName == "com.sec.android.app.shealth"
-            }
-
             val exerciseSessions = mutableListOf<Map<String, Any?>>()
 
-            samsungHealthRecords.forEach { exerciseRecord ->
+            allExerciseRecords.forEach { exerciseRecord ->
                 val durationMinutes = try {
                     java.time.Duration.between(exerciseRecord.startTime, exerciseRecord.endTime).toMinutes()
                 } catch (e: Exception) { 0L }
@@ -298,7 +262,7 @@ class AutoExportWorker(
         }
     }
 
-    private suspend fun readWeightRecordsFiltered(
+    private suspend fun readWeightRecords(
         client: HealthConnectClient,
         startTime: Instant,
         endTime: Instant
@@ -310,15 +274,13 @@ class AutoExportWorker(
             )
             val response = client.readRecords(request)
 
-            response.records
-                .filter { it.metadata.dataOrigin.packageName == "com.sec.android.app.shealth" }
-                .map { record ->
-                    mapOf(
-                        "timestamp" to record.time.toString(),
-                        "weight_kg" to record.weight.inKilograms,
-                        "source" to record.metadata.dataOrigin.packageName
-                    )
-                }
+            response.records.map { record ->
+                mapOf(
+                    "timestamp" to record.time.toString(),
+                    "weight_kg" to record.weight.inKilograms,
+                    "source" to record.metadata.dataOrigin.packageName
+                )
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error reading weight records", e)
             emptyList()
@@ -334,7 +296,7 @@ class AutoExportWorker(
             append("{\n")
             append("  \"export_type\": \"$exportType\",\n")
             append("  \"timestamp\": \"${LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)}\",\n")
-            append("  \"data_source\": \"Samsung Health Only (Filtered)\",\n")
+            append("  \"data_source\": \"All Apps (No Filter - Filter in Python)\",\n")
             append("  \"storage_location\": \"Local - Downloads/$EXPORT_FOLDER\",\n")
             append("  \"auto_sync_compatible\": true,\n")
             append("  \"weight_records\": {\n")
@@ -398,7 +360,7 @@ class AutoExportWorker(
             append("{\n")
             append("  \"export_type\": \"AUTO_DIFFERENTIAL\",\n")
             append("  \"timestamp\": \"${LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)}\",\n")
-            append("  \"data_source\": \"Samsung Health Only (Changes Since Last Export)\",\n")
+            append("  \"data_source\": \"All Apps (No Filter - Filter in Python)\",\n")
             append("  \"storage_location\": \"Local - Downloads/$EXPORT_FOLDER\",\n")
             append("  \"auto_sync_compatible\": true,\n")
             append("  \"last_export_time\": \"${java.time.Instant.ofEpochMilli(tokenManager.getLastExportTime())}\",\n")
