@@ -37,18 +37,14 @@ class AutoExportWorker(
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         try {
-            Log.d(TAG, "========================================")
-            Log.d(TAG, "🚀 AutoExportWorker INICIADO")
-            Log.d(TAG, "========================================")
             Log.d(TAG, "Iniciando export automático 24/7...")
 
             if (HealthConnectClient.getSdkStatus(context) != HealthConnectClient.SDK_AVAILABLE) {
-                Log.e(TAG, "❌ Health Connect no disponible")
+                Log.e(TAG, "Health Connect no disponible")
                 return@withContext Result.retry()
             }
 
             val healthConnectClient = HealthConnectClient.getOrCreate(context)
-            Log.d(TAG, "✅ HealthConnectClient creado")
 
             val grantedPermissions = healthConnectClient.permissionController.getGrantedPermissions()
             val requiredPermissions = setOf(
@@ -56,37 +52,30 @@ class AutoExportWorker(
                 HealthPermission.getReadPermission(ExerciseSessionRecord::class)
             )
 
-            Log.d(TAG, "Permisos otorgados: ${grantedPermissions.size}")
-            Log.d(TAG, "Permisos requeridos: ${requiredPermissions.size}")
-
             if (!grantedPermissions.containsAll(requiredPermissions)) {
-                Log.e(TAG, "❌ Permisos no otorgados")
+                Log.e(TAG, "Permisos no otorgados")
                 return@withContext Result.failure()
             }
 
             val isFirstExport = tokenManager.isFirstExport()
-            Log.d(TAG, "¿Es primer export?: $isFirstExport")
 
             if (isFirstExport) {
-                Log.d(TAG, "📦 Primera ejecución - Export completo + guardando token")
+                Log.d(TAG, "Primera ejecución - Export completo + guardando token")
                 performFullExport(healthConnectClient)
             } else {
-                Log.d(TAG, "📝 Export incremental - Solo cambios desde último export")
+                Log.d(TAG, "Export incremental - Solo cambios desde último export")
                 performDifferentialExport(healthConnectClient)
             }
 
-            Log.d(TAG, "✅ Export completado exitosamente")
             return@withContext Result.success()
 
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error en export automático", e)
-            Log.e(TAG, "Stacktrace: ${e.stackTraceToString()}")
+            Log.e(TAG, "Error en export automático", e)
             return@withContext Result.retry()
         }
     }
 
     private suspend fun performFullExport(client: HealthConnectClient) {
-        Log.d(TAG, "Iniciando FULL export...")
         val healthConnectManager = HealthConnectManager(context)
 
         val endTime = Instant.now()
@@ -108,22 +97,18 @@ class AutoExportWorker(
         )
         tokenManager.saveChangesToken(token)
 
-        Log.d(TAG, "✅ Export completo: ${weightData.size} weight + ${exerciseData.size} exercises")
+        Log.d(TAG, "Export completo: ${weightData.size} weight + ${exerciseData.size} exercises")
         Log.d(TAG, "Token guardado para próximos exports incrementales")
     }
 
     private suspend fun performDifferentialExport(client: HealthConnectClient) {
-        Log.d(TAG, "Iniciando DIFFERENTIAL export...")
-
         val savedToken = tokenManager.getChangesToken() ?: run {
             Log.e(TAG, "Token no encontrado, forzando export completo")
             performFullExport(client)
             return
         }
 
-        Log.d(TAG, "Token encontrado, leyendo cambios...")
         val changesResponse = client.getChanges(savedToken)
-        Log.d(TAG, "Cambios recibidos: ${changesResponse.changes.size}")
 
         val weightChanges = mutableListOf<Map<String, Any?>>()
         val exerciseChanges = mutableListOf<Map<String, Any?>>()
@@ -140,7 +125,6 @@ class AutoExportWorker(
                                 "source" to record.metadata.dataOrigin.packageName,
                                 "change_type" to "UPSERT"
                             ))
-                            Log.d(TAG, "  + Weight change detected")
                         }
                         is ExerciseSessionRecord -> {
                             val durationMinutes = try {
@@ -173,7 +157,6 @@ class AutoExportWorker(
                                         "has_detailed_data" to true,
                                         "change_type" to "UPSERT"
                                     ))
-                                    Log.d(TAG, "  + Exercise change detected")
                                 }
                             }
                         }
@@ -181,13 +164,12 @@ class AutoExportWorker(
                 }
                 is DeletionChange -> {
                     deletions.add(change.recordId)
-                    Log.d(TAG, "  - Deletion detected: ${change.recordId}")
                 }
             }
         }
 
         if (weightChanges.isEmpty() && exerciseChanges.isEmpty() && deletions.isEmpty()) {
-            Log.d(TAG, "ℹ️ No hay cambios desde último export")
+            Log.d(TAG, "No hay cambios desde último export")
             tokenManager.saveChangesToken(changesResponse.nextChangesToken)
             return
         }
@@ -199,12 +181,11 @@ class AutoExportWorker(
         saveToDownloads(fileName, jsonContent)
         tokenManager.saveChangesToken(changesResponse.nextChangesToken)
 
-        Log.d(TAG, "✅ Export diferencial: ${weightChanges.size} weight + ${exerciseChanges.size} exercises + ${deletions.size} deletions")
+        Log.d(TAG, "Export diferencial: ${weightChanges.size} weight + ${exerciseChanges.size} exercises + ${deletions.size} deletions")
     }
 
     private fun saveToDownloads(fileName: String, content: String) {
         try {
-            Log.d(TAG, "Guardando archivo: $fileName")
             val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
             val exportFolder = File(downloadsDir, EXPORT_FOLDER)
 
@@ -218,11 +199,12 @@ class AutoExportWorker(
                 writer.write(content)
             }
 
-            Log.d(TAG, "✅ Archivo guardado: ${file.absolutePath}")
-            Log.d(TAG, "📍 Ubicación: Downloads/$EXPORT_FOLDER/$fileName")
+            Log.d(TAG, "Archivo guardado: ${file.absolutePath}")
+            Log.d(TAG, "Ubicación: Downloads/$EXPORT_FOLDER/$fileName")
+            Log.d(TAG, "Autosync lo subirá automáticamente a Drive")
 
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error guardando archivo localmente", e)
+            Log.e(TAG, "Error guardando archivo localmente", e)
             throw e
         }
     }

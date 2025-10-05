@@ -3,7 +3,7 @@
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
- * You may not obtain a copy of the License at
+ * You may obtain a copy of the License at
  *
  * https://www.apache.org/licenses/LICENSE-2.0
  *
@@ -51,10 +51,8 @@ import java.time.temporal.ChronoUnit
 import kotlin.random.Random
 import kotlin.reflect.KClass
 
-// The minimum android level that can use Health Connect
 const val MIN_SUPPORTED_SDK = Build.VERSION_CODES.O_MR1
 
-/** Demonstrates reading and writing from Health Connect. */
 class HealthConnectManager(private val context: Context) {
     private val healthConnectClient by lazy { HealthConnectClient.getOrCreate(context) }
 
@@ -189,9 +187,6 @@ class HealthConnectManager(private val context: Context) {
         }
     }
 
-    /**
-     * FUNCIÓN ACTUALIZADA CON ESTRATEGIA HÍBRIDA PARA SOLUCIONAR LOS NULL DE SAMSUNG HEALTH
-     */
     suspend fun readAssociatedSessionData(uid: String): ExerciseSessionData {
         val exerciseSession = healthConnectClient.readRecord(ExerciseSessionRecord::class, uid)
         val timeRangeFilter = TimeRangeFilter.between(
@@ -199,7 +194,6 @@ class HealthConnectManager(private val context: Context) {
             endTime = exerciseSession.record.endTime
         )
 
-        // --- INTENTO 1: OBTENER DATOS AGREGADOS ---
         val aggregateDataTypes = setOf(
             ExerciseSessionRecord.EXERCISE_DURATION_TOTAL,
             StepsRecord.COUNT_TOTAL,
@@ -220,7 +214,6 @@ class HealthConnectManager(private val context: Context) {
             null
         }
 
-        // --- INTENTO 2: FALLBACK A DATOS CRUDOS SI LOS AGREGADOS SON NULL ---
         var fallbackSteps: Long? = null
         var fallbackDistance: Length? = null
         var fallbackTotalCalories: Energy? = null
@@ -232,39 +225,34 @@ class HealthConnectManager(private val context: Context) {
         val needsFallback = aggregateData == null || aggregateData.dataOrigins.isEmpty()
 
         if (needsFallback) {
-            // Fallback para Pasos
             try {
                 val stepsRecords = healthConnectClient.readRecords(ReadRecordsRequest(StepsRecord::class, timeRangeFilter)).records
                 if (stepsRecords.isNotEmpty()) {
                     fallbackSteps = stepsRecords.sumOf { it.count }
                 }
-            } catch (e: Exception) { /* Ignorar si no hay datos de este tipo */ }
+            } catch (e: Exception) { }
 
-            // Fallback para Distancia
             try {
                 val distanceRecords = healthConnectClient.readRecords(ReadRecordsRequest(DistanceRecord::class, timeRangeFilter)).records
                 if (distanceRecords.isNotEmpty()) {
                     fallbackDistance = Length.meters(distanceRecords.sumOf { it.distance.inMeters })
                 }
-            } catch (e: Exception) { /* Ignorar */ }
+            } catch (e: Exception) { }
 
-            // Fallback para Calorías Totales
             try {
                 val caloriesRecords = healthConnectClient.readRecords(ReadRecordsRequest(TotalCaloriesBurnedRecord::class, timeRangeFilter)).records
                 if (caloriesRecords.isNotEmpty()) {
                     fallbackTotalCalories = Energy.calories(caloriesRecords.sumOf { it.energy.inCalories })
                 }
-            } catch (e: Exception) { /* Ignorar */ }
+            } catch (e: Exception) { }
 
-            // Fallback para Calorías Activas
             try {
                 val activeCaloriesRecords = healthConnectClient.readRecords(ReadRecordsRequest(ActiveCaloriesBurnedRecord::class, timeRangeFilter)).records
                 if (activeCaloriesRecords.isNotEmpty()) {
                     fallbackActiveCalories = Energy.calories(activeCaloriesRecords.sumOf { it.energy.inCalories })
                 }
-            } catch (e: Exception) { /* Ignorar */ }
+            } catch (e: Exception) { }
 
-            // Fallback para Ritmo Cardíaco
             try {
                 val heartRateRecords = healthConnectClient.readRecords(ReadRecordsRequest(HeartRateRecord::class, timeRangeFilter)).records
                 if (heartRateRecords.isNotEmpty()) {
@@ -275,10 +263,9 @@ class HealthConnectManager(private val context: Context) {
                         fallbackMinHeartRate = allBpmSamples.minOrNull()
                     }
                 }
-            } catch (e: Exception) { /* Ignorar */ }
+            } catch (e: Exception) { }
         }
 
-        // Combinar resultados: usar el agregado si existe, si no, usar el de fallback.
         return ExerciseSessionData(
             uid = uid,
             totalActiveTime = aggregateData?.get(ExerciseSessionRecord.EXERCISE_DURATION_TOTAL),
@@ -291,7 +278,6 @@ class HealthConnectManager(private val context: Context) {
             activeCalories = aggregateData?.get(ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL) ?: fallbackActiveCalories
         )
     }
-
 
     suspend fun deleteAllSleepData() {
         val now = Instant.now()
@@ -359,6 +345,18 @@ class HealthConnectManager(private val context: Context) {
             )
         }
         return sessions
+    }
+
+    /**
+     * Lee sesiones de sueño en un rango de tiempo específico (para export)
+     */
+    suspend fun readSleepSessions(start: Instant, end: Instant): List<SleepSessionRecord> {
+        val request = ReadRecordsRequest(
+            recordType = SleepSessionRecord::class,
+            timeRangeFilter = TimeRangeFilter.between(start, end)
+        )
+        val response = healthConnectClient.readRecords(request)
+        return response.records
     }
 
     suspend fun writeWeightInput(weight: WeightRecord) {

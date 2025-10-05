@@ -1,5 +1,8 @@
 package com.example.healthconnectsample.presentation.screen.welcome
 
+import android.content.Context
+import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -20,23 +23,36 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
+import androidx.health.connect.client.HealthConnectClient
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.example.healthconnectsample.R
 import androidx.health.connect.client.HealthConnectClient.Companion.SDK_AVAILABLE
 import androidx.health.connect.client.HealthConnectClient.Companion.SDK_UNAVAILABLE
 import androidx.health.connect.client.HealthConnectClient.Companion.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED
+import com.example.healthconnectsample.data.HealthConnectManager
+import com.example.healthconnectsample.data.HealthDataSerializer
 import com.example.healthconnectsample.presentation.component.InstalledMessage
 import com.example.healthconnectsample.presentation.component.NotInstalledMessage
 import com.example.healthconnectsample.presentation.component.NotSupportedMessage
+import com.example.healthconnectsample.worker.AutoExportWorker
 import com.example.healthconnectsample.worker.ChangeTokenManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileWriter
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 @Composable
 fun WelcomeScreen(
@@ -45,9 +61,11 @@ fun WelcomeScreen(
     lifecycleOwner: LifecycleOwner = LocalLifecycleOwner.current
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var nextExportTime by remember { mutableStateOf("Calculando...") }
     var nextExportMinutes by remember { mutableStateOf<Long?>(null) }
     var isWorkerActive by remember { mutableStateOf(false) }
+    var isExporting by remember { mutableStateOf(false) }
     val currentOnAvailabilityCheck by rememberUpdatedState(onResumeAvailabilityCheck)
 
     DisposableEffect(lifecycleOwner) {
@@ -93,6 +111,153 @@ fun WelcomeScreen(
                 nextExportTime = "Export automático activo"
             }
             delay(30_000)
+        }
+    }
+
+    fun performManualExport() {
+        if (isExporting) return
+
+        isExporting = true
+        Toast.makeText(context, "Iniciando export manual (últimos 30 días)...", Toast.LENGTH_SHORT).show()
+
+        scope.launch {
+            try {
+                val healthConnectManager = HealthConnectManager(context)
+                val endTime = Instant.now()
+                val startTime = endTime.minus(java.time.Duration.ofDays(30))
+
+                val allExerciseRecords = healthConnectManager.readExerciseSessions(startTime, endTime)
+                val samsungExercises = allExerciseRecords.filter {
+                    it.metadata.dataOrigin.packageName == "com.sec.android.app.shealth"
+                }
+
+                val exerciseData = samsungExercises.mapNotNull { record ->
+                    val durationMinutes = try {
+                        java.time.Duration.between(record.startTime, record.endTime).toMinutes()
+                    } catch (e: Exception) { 0L }
+
+                    if (durationMinutes < 2) return@mapNotNull null
+
+                    val sessionData = try {
+                        healthConnectManager.readAssociatedSessionData(record.metadata.id)
+                    } catch (e: Exception) { null }
+
+                    if (sessionData == null) return@mapNotNull null
+
+                    mapOf(
+                        "session_id" to record.metadata.id,
+                        "title" to (record.title ?: "Exercise Session"),
+                        "exercise_type" to record.exerciseType,
+                        "start_time" to record.startTime.toString(),
+                        "end_time" to record.endTime.toString(),
+                        "duration_minutes" to (sessionData.totalActiveTime?.toMinutes() ?: durationMinutes),
+                        "total_steps" to sessionData.totalSteps,
+                        "distance_meters" to sessionData.totalDistance?.inMeters,
+                        "calories_burned" to sessionData.totalEnergyBurned?.inCalories,
+                        "avg_heart_rate" to sessionData.avgHeartRate,
+                        "max_heart_rate" to sessionData.maxHeartRate,
+                        "min_heart_rate" to sessionData.minHeartRate,
+                        "data_origin" to record.metadata.dataOrigin.packageName
+                    )
+                }
+
+                val allSleepRecords = healthConnectManager.readSleepSessions(startTime, endTime)
+                val samsungSleep = allSleepRecords.filter {
+                    it.metadata.dataOrigin.packageName == "com.sec.android.app.shealth"
+                }
+
+                val sleepData = samsungSleep.map { record ->
+                    val durationMinutes = try {
+                        java.time.Duration.between(record.startTime, record.endTime).toMinutes()
+                    } catch (e: Exception) { 0L }
+
+                    val stages = record.stages.map { stage ->
+                        mapOf(
+                            "stage_type" to stage.stage,
+                            "stage_name" to HealthDataSerializer.getSleepStageName(stage.stage),
+                            "start_time" to stage.startTime.toString(),
+                            "end_time" to stage.endTime.toString()
+                        )
+                    }
+
+                    mapOf(
+                        "session_id" to record.metadata.id,
+                        "title" to (record.title ?: "Sleep Session"),
+                        "notes" to record.notes,
+                        "start_time" to record.startTime.toString(),
+                        "end_time" to record.endTime.toString(),
+                        "duration_minutes" to durationMinutes,
+                        "stages_count" to stages.size,
+                        "stages" to stages,
+                        "data_origin" to record.metadata.dataOrigin.packageName
+                    )
+                }
+
+                val allWeightRecords = healthConnectManager.readWeightInputs(startTime, endTime)
+                val samsungWeight = allWeightRecords.filter {
+                    it.metadata.dataOrigin.packageName == "com.sec.android.app.shealth"
+                }
+
+                val weightData = samsungWeight.map { record ->
+                    mapOf(
+                        "timestamp" to record.time.atZone(record.zoneOffset ?: ZoneId.systemDefault()).toString(),
+                        "weight_kg" to record.weight.inKilograms,
+                        "source" to record.metadata.dataOrigin.packageName
+                    )
+                }
+
+                val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"))
+                val fileName = "health_data_SAMSUNG_MANUAL_${timestamp}.json"
+
+                val jsonContent = buildString {
+                    append("{\n")
+                    append("  \"export_type\": \"MANUAL_SAMSUNG_ONLY\",\n")
+                    append("  \"timestamp\": \"${LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)}\",\n")
+                    append("  \"data_source\": \"Samsung Health Only - Last 30 days\",\n")
+                    append("  \"weight_records\": {\n")
+                    append("    \"count\": ${weightData.size},\n")
+                    append("    \"data\": ${serializeList(weightData)}\n")
+                    append("  },\n")
+                    append("  \"exercise_sessions\": {\n")
+                    append("    \"count\": ${exerciseData.size},\n")
+                    append("    \"data\": ${serializeList(exerciseData)}\n")
+                    append("  },\n")
+                    append("  \"sleep_sessions\": {\n")
+                    append("    \"count\": ${sleepData.size},\n")
+                    append("    \"data\": ${serializeList(sleepData)}\n")
+                    append("  }\n")
+                    append("}")
+                }
+
+                val tempFile = File(context.cacheDir, fileName)
+                FileWriter(tempFile).use { it.write(jsonContent) }
+
+                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "application/json"
+                    putExtra(Intent.EXTRA_STREAM, FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.fileprovider",
+                        tempFile
+                    ))
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    setPackage("com.google.android.apps.docs")
+                }
+
+                context.startActivity(Intent.createChooser(shareIntent, "Guardar en Drive").apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+
+                Toast.makeText(
+                    context,
+                    "Export manual: ${weightData.size} peso + ${exerciseData.size} ejercicios + ${sleepData.size} sueño",
+                    Toast.LENGTH_LONG
+                ).show()
+
+            } catch (e: Exception) {
+                Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+            } finally {
+                isExporting = false
+            }
         }
     }
 
@@ -147,7 +312,7 @@ fun WelcomeScreen(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Export Automático",
+                        text = "Export Automático DIFERENCIAL",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
@@ -162,7 +327,7 @@ fun WelcomeScreen(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Cada 30 min, 24/7 - Solo cambios incrementales",
+                    text = "Solo cambios nuevos cada 30 min, 24/7",
                     fontSize = 12.sp,
                     color = Color.White.copy(alpha = 0.7f),
                     textAlign = TextAlign.Center
@@ -199,12 +364,56 @@ fun WelcomeScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         Button(
+            onClick = { performManualExport() },
+            enabled = !isExporting,
+            colors = ButtonDefaults.buttonColors(
+                backgroundColor = Color(0xFF4CAF50)
+            ),
+            modifier = Modifier.fillMaxWidth(0.8f)
+        ) {
+            Text(
+                text = if (isExporting) "Exportando..." else "Export Manual (30 días)",
+                color = Color.White,
+                fontSize = 14.sp
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Button(
+            onClick = {
+                val workRequest = OneTimeWorkRequestBuilder<AutoExportWorker>()
+                    .build()
+
+                WorkManager.getInstance(context).enqueue(workRequest)
+
+                Toast.makeText(
+                    context,
+                    "Export diferencial inmediato iniciado",
+                    Toast.LENGTH_SHORT
+                ).show()
+            },
+            colors = ButtonDefaults.buttonColors(
+                backgroundColor = Color(0xFF2196F3)
+            ),
+            modifier = Modifier.fillMaxWidth(0.8f)
+        ) {
+            Text(
+                text = "Export DIFF Ahora",
+                color = Color.White,
+                fontSize = 14.sp
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Button(
             onClick = {
                 ChangeTokenManager(context).clearToken()
-                android.widget.Toast.makeText(
+                Toast.makeText(
                     context,
                     "Token reseteado. Próximo export será completo.",
-                    android.widget.Toast.LENGTH_LONG
+                    Toast.LENGTH_LONG
                 ).show()
             },
             colors = ButtonDefaults.buttonColors(
@@ -213,7 +422,7 @@ fun WelcomeScreen(
             modifier = Modifier.fillMaxWidth(0.8f)
         ) {
             Text(
-                text = "🔄 Reset Export (Debug)",
+                text = "Reset Export (Debug)",
                 color = Color.White,
                 fontSize = 14.sp
             )
@@ -226,5 +435,31 @@ fun WelcomeScreen(
             SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED -> NotInstalledMessage()
             SDK_UNAVAILABLE -> NotSupportedMessage()
         }
+    }
+}
+
+private fun serializeList(list: List<Map<String, Any?>>): String {
+    if (list.isEmpty()) return "[]"
+    return buildString {
+        append("[\n")
+        list.forEachIndexed { index, map ->
+            append("      {\n")
+            map.entries.forEachIndexed { entryIndex, (key, value) ->
+                append("        \"$key\": ")
+                when (value) {
+                    is String -> append("\"$value\"")
+                    is Number -> append(value.toString())
+                    is List<*> -> append(serializeList(value as List<Map<String, Any?>>))
+                    null -> append("null")
+                    else -> append(value.toString())
+                }
+                if (entryIndex < map.size - 1) append(",")
+                append("\n")
+            }
+            append("      }")
+            if (index < list.size - 1) append(",")
+            append("\n")
+        }
+        append("    ]")
     }
 }
