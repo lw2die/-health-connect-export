@@ -8,6 +8,7 @@ import androidx.health.connect.client.changes.DeletionChange
 import androidx.health.connect.client.changes.UpsertionChange
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.ExerciseSessionRecord
+import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.request.ChangesTokenRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
@@ -15,6 +16,7 @@ import androidx.health.connect.client.time.TimeRangeFilter
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.example.healthconnectsample.data.HealthConnectManager
+import com.example.healthconnectsample.data.HealthDataSerializer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -53,7 +55,8 @@ class AutoExportWorker(
             val grantedPermissions = healthConnectClient.permissionController.getGrantedPermissions()
             val requiredPermissions = setOf(
                 HealthPermission.getReadPermission(WeightRecord::class),
-                HealthPermission.getReadPermission(ExerciseSessionRecord::class)
+                HealthPermission.getReadPermission(ExerciseSessionRecord::class),
+                HealthPermission.getReadPermission(SleepSessionRecord::class)
             )
 
             Log.d(TAG, "Permisos otorgados: ${grantedPermissions.size}")
@@ -103,7 +106,11 @@ class AutoExportWorker(
 
         val token = client.getChangesToken(
             ChangesTokenRequest(
-                recordTypes = setOf(WeightRecord::class, ExerciseSessionRecord::class)
+                recordTypes = setOf(
+                    WeightRecord::class,
+                    ExerciseSessionRecord::class,
+                    SleepSessionRecord::class
+                )
             )
         )
         tokenManager.saveChangesToken(token)
@@ -127,6 +134,7 @@ class AutoExportWorker(
 
         val weightChanges = mutableListOf<Map<String, Any?>>()
         val exerciseChanges = mutableListOf<Map<String, Any?>>()
+        val sleepChanges = mutableListOf<Map<String, Any?>>()
         val deletions = mutableListOf<String>()
 
         changesResponse.changes.forEach { change ->
@@ -177,6 +185,31 @@ class AutoExportWorker(
                                 }
                             }
                         }
+                        is SleepSessionRecord -> {
+                            val durationMinutes = try {
+                                java.time.Duration.between(record.startTime, record.endTime).toMinutes()
+                            } catch (e: Exception) { 0L }
+
+                            sleepChanges.add(mapOf(
+                                "session_id" to record.metadata.id,
+                                "start_time" to record.startTime.toString(),
+                                "end_time" to record.endTime.toString(),
+                                "duration_minutes" to durationMinutes,
+                                "title" to (record.title ?: "Sleep Session"),
+                                "notes" to record.notes,
+                                "stages" to record.stages.map { stage ->
+                                    mapOf(
+                                        "start_time" to stage.startTime.toString(),
+                                        "end_time" to stage.endTime.toString(),
+                                        "stage_type" to stage.stage,
+                                        "stage_name" to HealthDataSerializer.getSleepStageName(stage.stage)
+                                    )
+                                },
+                                "source" to record.metadata.dataOrigin.packageName,
+                                "change_type" to "UPSERT"
+                            ))
+                            Log.d(TAG, "  + Sleep change detected")
+                        }
                     }
                 }
                 is DeletionChange -> {
@@ -186,7 +219,7 @@ class AutoExportWorker(
             }
         }
 
-        if (weightChanges.isEmpty() && exerciseChanges.isEmpty() && deletions.isEmpty()) {
+        if (weightChanges.isEmpty() && exerciseChanges.isEmpty() && sleepChanges.isEmpty() && deletions.isEmpty()) {
             Log.d(TAG, "ℹ️ No hay cambios desde último export")
             tokenManager.saveChangesToken(changesResponse.nextChangesToken)
             return
@@ -194,12 +227,12 @@ class AutoExportWorker(
 
         val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"))
         val fileName = "health_data_AUTO_DIFF_${timestamp}.json"
-        val jsonContent = generateDifferentialJSON(weightChanges, exerciseChanges, deletions)
+        val jsonContent = generateDifferentialJSON(weightChanges, exerciseChanges, sleepChanges, deletions)
 
         saveToDownloads(fileName, jsonContent)
         tokenManager.saveChangesToken(changesResponse.nextChangesToken)
 
-        Log.d(TAG, "✅ Export diferencial: ${weightChanges.size} weight + ${exerciseChanges.size} exercises + ${deletions.size} deletions")
+        Log.d(TAG, "✅ Export diferencial: ${weightChanges.size} weight + ${exerciseChanges.size} exercises + ${sleepChanges.size} sleep + ${deletions.size} deletions")
     }
 
     private fun saveToDownloads(fileName: String, content: String) {
@@ -372,6 +405,7 @@ class AutoExportWorker(
     private fun generateDifferentialJSON(
         weightChanges: List<Map<String, Any?>>,
         exerciseChanges: List<Map<String, Any?>>,
+        sleepChanges: List<Map<String, Any?>>,
         deletions: List<String>
     ): String {
         return buildString {
@@ -425,6 +459,51 @@ class AutoExportWorker(
                 }
                 append("      }")
                 if (index < exerciseChanges.size - 1) append(",")
+                append("\n")
+            }
+
+            append("    ]\n")
+            append("  },\n")
+            append("  \"sleep_changes\": {\n")
+            append("    \"count\": ${sleepChanges.size},\n")
+            append("    \"data\": [\n")
+
+            sleepChanges.forEachIndexed { index, session ->
+                append("      {\n")
+                session.forEach { (key, value) ->
+                    val valueStr = when (value) {
+                        is String -> "\"$value\""
+                        is List<*> -> {
+                            // Serializar stages como array JSON
+                            val stages = value as List<Map<String, Any?>>
+                            buildString {
+                                append("[\n")
+                                stages.forEachIndexed { stageIndex, stage ->
+                                    append("          {")
+                                    stage.entries.forEachIndexed { entryIndex, (k, v) ->
+                                        append("\"$k\": ")
+                                        when (v) {
+                                            is String -> append("\"$v\"")
+                                            else -> append("\"$v\"")
+                                        }
+                                        if (entryIndex < stage.size - 1) append(", ")
+                                    }
+                                    append("}")
+                                    if (stageIndex < stages.size - 1) append(",")
+                                    append("\n")
+                                }
+                                append("        ]")
+                            }
+                        }
+                        null -> "null"
+                        else -> value.toString()
+                    }
+                    append("        \"$key\": $valueStr")
+                    if (key != session.keys.last()) append(",")
+                    append("\n")
+                }
+                append("      }")
+                if (index < sleepChanges.size - 1) append(",")
                 append("\n")
             }
 
