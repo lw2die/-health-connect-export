@@ -10,6 +10,7 @@ import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.WeightRecord
+import androidx.health.connect.client.records.Vo2MaxRecord
 import androidx.health.connect.client.request.ChangesTokenRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
@@ -56,7 +57,8 @@ class AutoExportWorker(
             val requiredPermissions = setOf(
                 HealthPermission.getReadPermission(WeightRecord::class),
                 HealthPermission.getReadPermission(ExerciseSessionRecord::class),
-                HealthPermission.getReadPermission(SleepSessionRecord::class)
+                HealthPermission.getReadPermission(SleepSessionRecord::class),
+                HealthPermission.getReadPermission(Vo2MaxRecord::class)  // AGREGADO
             )
 
             Log.d(TAG, "Permisos otorgados: ${grantedPermissions.size}")
@@ -97,10 +99,11 @@ class AutoExportWorker(
 
         val exerciseData = readExerciseSessions(healthConnectManager, startTime, endTime)
         val weightData = readWeightRecords(client, startTime, endTime)
+        val vo2maxData = readVo2MaxRecords(healthConnectManager, startTime, endTime)  // AGREGADO
 
         val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"))
         val fileName = "health_data_AUTO_FULL_${timestamp}.json"
-        val jsonContent = generateHealthJSON(weightData, exerciseData, "AUTO_FULL_EXPORT")
+        val jsonContent = generateHealthJSON(weightData, exerciseData, vo2maxData, "AUTO_FULL_EXPORT")  // MODIFICADO
 
         saveToDownloads(fileName, jsonContent)
 
@@ -109,13 +112,14 @@ class AutoExportWorker(
                 recordTypes = setOf(
                     WeightRecord::class,
                     ExerciseSessionRecord::class,
-                    SleepSessionRecord::class
+                    SleepSessionRecord::class,
+                    Vo2MaxRecord::class  // AGREGADO
                 )
             )
         )
         tokenManager.saveChangesToken(token)
 
-        Log.d(TAG, "✅ Export completo: ${weightData.size} weight + ${exerciseData.size} exercises")
+        Log.d(TAG, "✅ Export completo: ${weightData.size} weight + ${exerciseData.size} exercises + ${vo2maxData.size} VO2Max")
         Log.d(TAG, "Token guardado para próximos exports incrementales")
     }
 
@@ -135,6 +139,7 @@ class AutoExportWorker(
         val weightChanges = mutableListOf<Map<String, Any?>>()
         val exerciseChanges = mutableListOf<Map<String, Any?>>()
         val sleepChanges = mutableListOf<Map<String, Any?>>()
+        val vo2maxChanges = mutableListOf<Map<String, Any?>>()  // AGREGADO
         val deletions = mutableListOf<String>()
 
         changesResponse.changes.forEach { change ->
@@ -149,6 +154,16 @@ class AutoExportWorker(
                                 "change_type" to "UPSERT"
                             ))
                             Log.d(TAG, "  + Weight change detected")
+                        }
+                        is Vo2MaxRecord -> {  // AGREGADO
+                            vo2maxChanges.add(mapOf(
+                                "timestamp" to record.time.toString(),
+                                "vo2_ml_kg_min" to record.vo2MillilitersPerMinuteKilogram,
+                                "measurement_method" to record.measurementMethod,
+                                "source" to record.metadata.dataOrigin.packageName,
+                                "change_type" to "UPSERT"
+                            ))
+                            Log.d(TAG, "  + VO2Max change detected")
                         }
                         is ExerciseSessionRecord -> {
                             val durationMinutes = try {
@@ -219,7 +234,8 @@ class AutoExportWorker(
             }
         }
 
-        if (weightChanges.isEmpty() && exerciseChanges.isEmpty() && sleepChanges.isEmpty() && deletions.isEmpty()) {
+        if (weightChanges.isEmpty() && exerciseChanges.isEmpty() && sleepChanges.isEmpty() &&
+            vo2maxChanges.isEmpty() && deletions.isEmpty()) {  // MODIFICADO
             Log.d(TAG, "ℹ️ No hay cambios desde último export")
             tokenManager.saveChangesToken(changesResponse.nextChangesToken)
             return
@@ -227,12 +243,12 @@ class AutoExportWorker(
 
         val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"))
         val fileName = "health_data_AUTO_DIFF_${timestamp}.json"
-        val jsonContent = generateDifferentialJSON(weightChanges, exerciseChanges, sleepChanges, deletions)
+        val jsonContent = generateDifferentialJSON(weightChanges, exerciseChanges, sleepChanges, vo2maxChanges, deletions)  // MODIFICADO
 
         saveToDownloads(fileName, jsonContent)
         tokenManager.saveChangesToken(changesResponse.nextChangesToken)
 
-        Log.d(TAG, "✅ Export diferencial: ${weightChanges.size} weight + ${exerciseChanges.size} exercises + ${sleepChanges.size} sleep + ${deletions.size} deletions")
+        Log.d(TAG, "✅ Export diferencial: ${weightChanges.size} weight + ${exerciseChanges.size} exercises + ${sleepChanges.size} sleep + ${vo2maxChanges.size} VO2Max + ${deletions.size} deletions")
     }
 
     private fun saveToDownloads(fileName: String, content: String) {
@@ -338,9 +354,47 @@ class AutoExportWorker(
         }
     }
 
+    // AGREGADO: Nueva función para leer VO2Max
+    private suspend fun readVo2MaxRecords(
+        healthConnectManager: HealthConnectManager,
+        startTime: Instant,
+        endTime: Instant
+    ): List<Map<String, Any?>> {
+        return try {
+            val records = healthConnectManager.readVo2MaxRecords(startTime, endTime)
+
+            records.map { record ->
+                mapOf(
+                    "timestamp" to record.time.toString(),
+                    "vo2_ml_kg_min" to record.vo2MillilitersPerMinuteKilogram,
+                    "measurement_method" to getMeasurementMethodName(record.measurementMethod),
+                    "source" to record.metadata.dataOrigin.packageName
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reading VO2Max records", e)
+            emptyList()
+        }
+    }
+
+    // AGREGADO: Helper para nombres de método de medición
+    private fun getMeasurementMethodName(method: Int): String {
+        return when (method) {
+            Vo2MaxRecord.MEASUREMENT_METHOD_OTHER -> "Other"
+            Vo2MaxRecord.MEASUREMENT_METHOD_METABOLIC_CART -> "Metabolic Cart"
+            Vo2MaxRecord.MEASUREMENT_METHOD_HEART_RATE_RATIO -> "Heart Rate Ratio"
+            Vo2MaxRecord.MEASUREMENT_METHOD_COOPER_TEST -> "Cooper Test"
+            Vo2MaxRecord.MEASUREMENT_METHOD_MULTISTAGE_FITNESS_TEST -> "Multistage Fitness Test"
+            Vo2MaxRecord.MEASUREMENT_METHOD_ROCKPORT_FITNESS_TEST -> "Rockport Fitness Test"
+            else -> "Unknown"
+        }
+    }
+
+    // MODIFICADO: Ahora incluye VO2Max
     private fun generateHealthJSON(
         weightRecords: List<Map<String, Any?>>,
         exerciseData: List<Map<String, Any?>>,
+        vo2maxData: List<Map<String, Any?>>,
         exportType: String
     ): String {
         return buildString {
@@ -397,15 +451,43 @@ class AutoExportWorker(
             }
 
             append("    ]\n")
+            append("  },\n")
+
+            // AGREGADO: Sección VO2Max
+            append("  \"vo2max_records\": {\n")
+            append("    \"count\": ${vo2maxData.size},\n")
+            append("    \"data\": [\n")
+
+            vo2maxData.forEachIndexed { index, record ->
+                append("      {\n")
+                record.forEach { (key, value) ->
+                    val valueStr = when (value) {
+                        is String -> "\"$value\""
+                        is Double -> String.format("%.2f", value)
+                        null -> "null"
+                        else -> value.toString()
+                    }
+                    append("        \"$key\": $valueStr")
+                    if (key != record.keys.last()) append(",")
+                    append("\n")
+                }
+                append("      }")
+                if (index < vo2maxData.size - 1) append(",")
+                append("\n")
+            }
+
+            append("    ]\n")
             append("  }\n")
             append("}")
         }
     }
 
+    // MODIFICADO: Ahora incluye VO2Max changes
     private fun generateDifferentialJSON(
         weightChanges: List<Map<String, Any?>>,
         exerciseChanges: List<Map<String, Any?>>,
         sleepChanges: List<Map<String, Any?>>,
+        vo2maxChanges: List<Map<String, Any?>>,  // AGREGADO
         deletions: List<String>
     ): String {
         return buildString {
@@ -509,6 +591,33 @@ class AutoExportWorker(
 
             append("    ]\n")
             append("  },\n")
+
+            // AGREGADO: Sección VO2Max changes
+            append("  \"vo2max_changes\": {\n")
+            append("    \"count\": ${vo2maxChanges.size},\n")
+            append("    \"data\": [\n")
+
+            vo2maxChanges.forEachIndexed { index, record ->
+                append("      {\n")
+                record.forEach { (key, value) ->
+                    val valueStr = when (value) {
+                        is String -> "\"$value\""
+                        is Double -> String.format("%.2f", value)
+                        null -> "null"
+                        else -> value.toString()
+                    }
+                    append("        \"$key\": $valueStr")
+                    if (key != record.keys.last()) append(",")
+                    append("\n")
+                }
+                append("      }")
+                if (index < vo2maxChanges.size - 1) append(",")
+                append("\n")
+            }
+
+            append("    ]\n")
+            append("  },\n")
+
             append("  \"deletions\": {\n")
             append("    \"count\": ${deletions.size},\n")
             append("    \"record_ids\": [\n")

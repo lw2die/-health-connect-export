@@ -27,6 +27,7 @@ import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
 import androidx.health.connect.client.records.HeartRateRecord
+import androidx.health.connect.client.records.Vo2MaxRecord
 import androidx.health.connect.client.records.metadata.Metadata
 import androidx.health.connect.client.units.Mass
 import androidx.lifecycle.ViewModel
@@ -54,8 +55,8 @@ class InputReadingsViewModel(private val healthConnectManager: HealthConnectMana
         HealthPermission.getReadPermission(StepsRecord::class),
         HealthPermission.getReadPermission(DistanceRecord::class),
         HealthPermission.getReadPermission(TotalCaloriesBurnedRecord::class),
-        HealthPermission.getReadPermission(HeartRateRecord::class)
-
+        HealthPermission.getReadPermission(HeartRateRecord::class),
+        HealthPermission.getReadPermission(Vo2MaxRecord::class)
     )
 
     var weeklyAvg: MutableState<Mass?> = mutableStateOf(Mass.kilograms(0.0))

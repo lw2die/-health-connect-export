@@ -126,6 +126,21 @@ fun WelcomeScreen(
                 val endTime = Instant.now()
                 val startTime = endTime.minus(java.time.Duration.ofDays(30))
 
+                // WEIGHT DATA
+                val allWeightRecords = healthConnectManager.readWeightInputs(startTime, endTime)
+                val samsungWeight = allWeightRecords.filter {
+                    it.metadata.dataOrigin.packageName == "com.sec.android.app.shealth"
+                }
+
+                val weightData = samsungWeight.map { record ->
+                    mapOf(
+                        "timestamp" to record.time.atZone(record.zoneOffset ?: ZoneId.systemDefault()).toString(),
+                        "weight_kg" to record.weight.inKilograms,
+                        "source" to record.metadata.dataOrigin.packageName
+                    )
+                }
+
+                // EXERCISE DATA
                 val allExerciseRecords = healthConnectManager.readExerciseSessions(startTime, endTime)
                 val samsungExercises = allExerciseRecords.filter {
                     it.metadata.dataOrigin.packageName == "com.sec.android.app.shealth"
@@ -161,6 +176,7 @@ fun WelcomeScreen(
                     )
                 }
 
+                // SLEEP DATA
                 val allSleepRecords = healthConnectManager.readSleepSessions(startTime, endTime)
                 val samsungSleep = allSleepRecords.filter {
                     it.metadata.dataOrigin.packageName == "com.sec.android.app.shealth"
@@ -193,15 +209,17 @@ fun WelcomeScreen(
                     )
                 }
 
-                val allWeightRecords = healthConnectManager.readWeightInputs(startTime, endTime)
-                val samsungWeight = allWeightRecords.filter {
+                // VO2MAX DATA - NUEVA SECCIÓN
+                val allVo2MaxRecords = healthConnectManager.readVo2MaxRecords(startTime, endTime)
+                val samsungVo2Max = allVo2MaxRecords.filter {
                     it.metadata.dataOrigin.packageName == "com.sec.android.app.shealth"
                 }
 
-                val weightData = samsungWeight.map { record ->
+                val vo2MaxData = samsungVo2Max.map { record ->
                     mapOf(
                         "timestamp" to record.time.atZone(record.zoneOffset ?: ZoneId.systemDefault()).toString(),
-                        "weight_kg" to record.weight.inKilograms,
+                        "vo2_max_ml_per_min_per_kg" to record.vo2MillilitersPerMinuteKilogram,
+                        "measurement_method" to record.measurementMethod,
                         "source" to record.metadata.dataOrigin.packageName
                     )
                 }
@@ -225,6 +243,10 @@ fun WelcomeScreen(
                     append("  \"sleep_sessions\": {\n")
                     append("    \"count\": ${sleepData.size},\n")
                     append("    \"data\": ${serializeList(sleepData)}\n")
+                    append("  },\n")
+                    append("  \"vo2max_records\": {\n")
+                    append("    \"count\": ${vo2MaxData.size},\n")
+                    append("    \"data\": ${serializeList(vo2MaxData)}\n")
                     append("  }\n")
                     append("}")
                 }
@@ -249,7 +271,7 @@ fun WelcomeScreen(
 
                 Toast.makeText(
                     context,
-                    "Export manual: ${weightData.size} peso + ${exerciseData.size} ejercicios + ${sleepData.size} sueño",
+                    "Export manual: ${weightData.size} peso + ${exerciseData.size} ejercicios + ${sleepData.size} sueño + ${vo2MaxData.size} VO2Max",
                     Toast.LENGTH_LONG
                 ).show()
 
