@@ -209,7 +209,7 @@ fun WelcomeScreen(
                     )
                 }
 
-                // VO2MAX DATA - NUEVA SECCIÓN
+                // VO2MAX DATA
                 val allVo2MaxRecords = healthConnectManager.readVo2MaxRecords(startTime, endTime)
                 val samsungVo2Max = allVo2MaxRecords.filter {
                     it.metadata.dataOrigin.packageName == "com.sec.android.app.shealth"
@@ -220,6 +220,79 @@ fun WelcomeScreen(
                         "timestamp" to record.time.atZone(record.zoneOffset ?: ZoneId.systemDefault()).toString(),
                         "vo2_max_ml_per_min_per_kg" to record.vo2MillilitersPerMinuteKilogram,
                         "measurement_method" to record.measurementMethod,
+                        "source" to record.metadata.dataOrigin.packageName
+                    )
+                }
+
+                // v1.7.0 - STEPS DATA
+                val allStepsRecords = healthConnectManager.readStepsRecords(startTime, endTime)
+                val samsungSteps = allStepsRecords.filter {
+                    it.metadata.dataOrigin.packageName == "com.sec.android.app.shealth"
+                }
+
+                val stepsData = samsungSteps.map { record ->
+                    mapOf(
+                        "start_time" to record.startTime.atZone(record.startZoneOffset ?: ZoneId.systemDefault()).toString(),
+                        "end_time" to record.endTime.atZone(record.endZoneOffset ?: ZoneId.systemDefault()).toString(),
+                        "count" to record.count,
+                        "source" to record.metadata.dataOrigin.packageName
+                    )
+                }
+
+                // v1.7.0 - DISTANCE DATA
+                val allDistanceRecords = healthConnectManager.readDistanceRecords(startTime, endTime)
+                val samsungDistance = allDistanceRecords.filter {
+                    it.metadata.dataOrigin.packageName == "com.sec.android.app.shealth"
+                }
+
+                val distanceData = samsungDistance.map { record ->
+                    mapOf(
+                        "start_time" to record.startTime.atZone(record.startZoneOffset ?: ZoneId.systemDefault()).toString(),
+                        "end_time" to record.endTime.atZone(record.endZoneOffset ?: ZoneId.systemDefault()).toString(),
+                        "distance_meters" to record.distance.inMeters,
+                        "source" to record.metadata.dataOrigin.packageName
+                    )
+                }
+
+                // v1.7.0 - TOTAL CALORIES DATA
+                val allTotalCaloriesRecords = healthConnectManager.readTotalCaloriesBurnedRecords(startTime, endTime)
+                val samsungTotalCalories = allTotalCaloriesRecords.filter {
+                    it.metadata.dataOrigin.packageName == "com.sec.android.app.shealth"
+                }
+
+                val totalCaloriesData = samsungTotalCalories.map { record ->
+                    mapOf(
+                        "start_time" to record.startTime.atZone(record.startZoneOffset ?: ZoneId.systemDefault()).toString(),
+                        "end_time" to record.endTime.atZone(record.endZoneOffset ?: ZoneId.systemDefault()).toString(),
+                        "energy_kcal" to record.energy.inKilocalories,
+                        "source" to record.metadata.dataOrigin.packageName
+                    )
+                }
+
+                // v1.7.0 - RESTING HEART RATE DATA
+                val allRestingHRRecords = healthConnectManager.readRestingHeartRateRecords(startTime, endTime)
+                val samsungRestingHR = allRestingHRRecords.filter {
+                    it.metadata.dataOrigin.packageName == "com.sec.android.app.shealth"
+                }
+
+                val restingHRData = samsungRestingHR.map { record ->
+                    mapOf(
+                        "timestamp" to record.time.atZone(record.zoneOffset ?: ZoneId.systemDefault()).toString(),
+                        "bpm" to record.beatsPerMinute,
+                        "source" to record.metadata.dataOrigin.packageName
+                    )
+                }
+
+                // v1.7.0 - OXYGEN SATURATION DATA
+                val allOxygenSatRecords = healthConnectManager.readOxygenSaturationRecords(startTime, endTime)
+                val samsungOxygenSat = allOxygenSatRecords.filter {
+                    it.metadata.dataOrigin.packageName == "com.sec.android.app.shealth"
+                }
+
+                val oxygenSatData = samsungOxygenSat.map { record ->
+                    mapOf(
+                        "timestamp" to record.time.atZone(record.zoneOffset ?: ZoneId.systemDefault()).toString(),
+                        "percentage" to record.percentage.value,
                         "source" to record.metadata.dataOrigin.packageName
                     )
                 }
@@ -247,6 +320,27 @@ fun WelcomeScreen(
                     append("  \"vo2max_records\": {\n")
                     append("    \"count\": ${vo2MaxData.size},\n")
                     append("    \"data\": ${serializeList(vo2MaxData)}\n")
+                    append("  },\n")
+                    // v1.7.0 - Essential Metrics
+                    append("  \"steps_records\": {\n")
+                    append("    \"count\": ${stepsData.size},\n")
+                    append("    \"data\": ${serializeList(stepsData)}\n")
+                    append("  },\n")
+                    append("  \"distance_records\": {\n")
+                    append("    \"count\": ${distanceData.size},\n")
+                    append("    \"data\": ${serializeList(distanceData)}\n")
+                    append("  },\n")
+                    append("  \"total_calories_records\": {\n")
+                    append("    \"count\": ${totalCaloriesData.size},\n")
+                    append("    \"data\": ${serializeList(totalCaloriesData)}\n")
+                    append("  },\n")
+                    append("  \"resting_heart_rate_records\": {\n")
+                    append("    \"count\": ${restingHRData.size},\n")
+                    append("    \"data\": ${serializeList(restingHRData)}\n")
+                    append("  },\n")
+                    append("  \"oxygen_saturation_records\": {\n")
+                    append("    \"count\": ${oxygenSatData.size},\n")
+                    append("    \"data\": ${serializeList(oxygenSatData)}\n")
                     append("  }\n")
                     append("}")
                 }
@@ -271,7 +365,7 @@ fun WelcomeScreen(
 
                 Toast.makeText(
                     context,
-                    "Export manual: ${weightData.size} peso + ${exerciseData.size} ejercicios + ${sleepData.size} sueño + ${vo2MaxData.size} VO2Max",
+                    "Export manual: ${weightData.size} peso + ${exerciseData.size} ejercicios + ${sleepData.size} sueño + ${vo2MaxData.size} VO2Max + ${stepsData.size} pasos + ${distanceData.size} distancia + ${totalCaloriesData.size} calorías + ${restingHRData.size} FC reposo + ${oxygenSatData.size} SpO2",
                     Toast.LENGTH_LONG
                 ).show()
 
