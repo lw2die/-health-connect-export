@@ -385,6 +385,68 @@ class HealthConnectManager(private val context: Context) {
         return response.records
     }
 
+    // v1.7.0 - NUEVAS FUNCIONES PARA 5 MÉTRICAS ESENCIALES
+
+    /**
+     * Lee registros de pasos en un rango de tiempo específico
+     */
+    suspend fun readStepsRecords(start: Instant, end: Instant): List<StepsRecord> {
+        val request = ReadRecordsRequest(
+            recordType = StepsRecord::class,
+            timeRangeFilter = TimeRangeFilter.between(start, end)
+        )
+        val response = healthConnectClient.readRecords(request)
+        return response.records
+    }
+
+    /**
+     * Lee registros de distancia en un rango de tiempo específico
+     */
+    suspend fun readDistanceRecords(start: Instant, end: Instant): List<DistanceRecord> {
+        val request = ReadRecordsRequest(
+            recordType = DistanceRecord::class,
+            timeRangeFilter = TimeRangeFilter.between(start, end)
+        )
+        val response = healthConnectClient.readRecords(request)
+        return response.records
+    }
+
+    /**
+     * Lee registros de calorías totales quemadas en un rango de tiempo específico
+     */
+    suspend fun readTotalCaloriesBurnedRecords(start: Instant, end: Instant): List<TotalCaloriesBurnedRecord> {
+        val request = ReadRecordsRequest(
+            recordType = TotalCaloriesBurnedRecord::class,
+            timeRangeFilter = TimeRangeFilter.between(start, end)
+        )
+        val response = healthConnectClient.readRecords(request)
+        return response.records
+    }
+
+    /**
+     * Lee registros de frecuencia cardíaca en reposo en un rango de tiempo específico
+     */
+    suspend fun readRestingHeartRateRecords(start: Instant, end: Instant): List<RestingHeartRateRecord> {
+        val request = ReadRecordsRequest(
+            recordType = RestingHeartRateRecord::class,
+            timeRangeFilter = TimeRangeFilter.between(start, end)
+        )
+        val response = healthConnectClient.readRecords(request)
+        return response.records
+    }
+
+    /**
+     * Lee registros de saturación de oxígeno en un rango de tiempo específico
+     */
+    suspend fun readOxygenSaturationRecords(start: Instant, end: Instant): List<OxygenSaturationRecord> {
+        val request = ReadRecordsRequest(
+            recordType = OxygenSaturationRecord::class,
+            timeRangeFilter = TimeRangeFilter.between(start, end)
+        )
+        val response = healthConnectClient.readRecords(request)
+        return response.records
+    }
+
     suspend fun computeWeeklyAverage(start: Instant, end: Instant): Mass? {
         val request = AggregateRequest(
             metrics = setOf(WeightRecord.WEIGHT_AVG),

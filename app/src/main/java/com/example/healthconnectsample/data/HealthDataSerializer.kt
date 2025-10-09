@@ -22,6 +22,11 @@ object HealthDataSerializer {
         exerciseData: List<Map<String, Any?>>,
         sleepData: List<Map<String, Any?>>,
         vo2maxData: List<Map<String, Any?>>,
+        stepsData: List<Map<String, Any?>>,
+        distanceData: List<Map<String, Any?>>,
+        totalCaloriesData: List<Map<String, Any?>>,
+        restingHRData: List<Map<String, Any?>>,
+        oxygenSaturationData: List<Map<String, Any?>>,
         exportType: String
     ): String {
         return buildString {
@@ -44,6 +49,26 @@ object HealthDataSerializer {
             append("  \"vo2max_records\": {\n")
             append("    \"count\": ${vo2maxData.size},\n")
             append("    \"data\": ${serializeList(vo2maxData)}\n")
+            append("  },\n")
+            append("  \"steps_records\": {\n")
+            append("    \"count\": ${stepsData.size},\n")
+            append("    \"data\": ${serializeList(stepsData)}\n")
+            append("  },\n")
+            append("  \"distance_records\": {\n")
+            append("    \"count\": ${distanceData.size},\n")
+            append("    \"data\": ${serializeList(distanceData)}\n")
+            append("  },\n")
+            append("  \"total_calories_records\": {\n")
+            append("    \"count\": ${totalCaloriesData.size},\n")
+            append("    \"data\": ${serializeList(totalCaloriesData)}\n")
+            append("  },\n")
+            append("  \"resting_heart_rate_records\": {\n")
+            append("    \"count\": ${restingHRData.size},\n")
+            append("    \"data\": ${serializeList(restingHRData)}\n")
+            append("  },\n")
+            append("  \"oxygen_saturation_records\": {\n")
+            append("    \"count\": ${oxygenSaturationData.size},\n")
+            append("    \"data\": ${serializeList(oxygenSaturationData)}\n")
             append("  }\n")
             append("}")
         }

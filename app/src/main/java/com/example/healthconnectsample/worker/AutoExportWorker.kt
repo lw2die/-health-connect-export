@@ -11,6 +11,11 @@ import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.records.Vo2MaxRecord
+import androidx.health.connect.client.records.StepsRecord
+import androidx.health.connect.client.records.DistanceRecord
+import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
+import androidx.health.connect.client.records.RestingHeartRateRecord
+import androidx.health.connect.client.records.OxygenSaturationRecord
 import androidx.health.connect.client.request.ChangesTokenRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
@@ -24,6 +29,7 @@ import java.io.File
 import java.io.FileWriter
 import java.time.Instant
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 class AutoExportWorker(
@@ -58,7 +64,13 @@ class AutoExportWorker(
                 HealthPermission.getReadPermission(WeightRecord::class),
                 HealthPermission.getReadPermission(ExerciseSessionRecord::class),
                 HealthPermission.getReadPermission(SleepSessionRecord::class),
-                HealthPermission.getReadPermission(Vo2MaxRecord::class)  // AGREGADO
+                HealthPermission.getReadPermission(Vo2MaxRecord::class),
+                // v1.7.0 - Essential Metrics
+                HealthPermission.getReadPermission(StepsRecord::class),
+                HealthPermission.getReadPermission(DistanceRecord::class),
+                HealthPermission.getReadPermission(TotalCaloriesBurnedRecord::class),
+                HealthPermission.getReadPermission(RestingHeartRateRecord::class),
+                HealthPermission.getReadPermission(OxygenSaturationRecord::class)
             )
 
             Log.d(TAG, "Permisos otorgados: ${grantedPermissions.size}")
@@ -99,11 +111,27 @@ class AutoExportWorker(
 
         val exerciseData = readExerciseSessions(healthConnectManager, startTime, endTime)
         val weightData = readWeightRecords(client, startTime, endTime)
-        val vo2maxData = readVo2MaxRecords(healthConnectManager, startTime, endTime)  // AGREGADO
+        val vo2maxData = readVo2MaxRecords(healthConnectManager, startTime, endTime)
+        // v1.7.0 - Essential Metrics
+        val stepsData = readStepsRecords(healthConnectManager, startTime, endTime)
+        val distanceData = readDistanceRecords(healthConnectManager, startTime, endTime)
+        val totalCaloriesData = readTotalCaloriesRecords(healthConnectManager, startTime, endTime)
+        val restingHRData = readRestingHeartRateRecords(healthConnectManager, startTime, endTime)
+        val oxygenSatData = readOxygenSaturationRecords(healthConnectManager, startTime, endTime)
 
         val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"))
         val fileName = "health_data_AUTO_FULL_${timestamp}.json"
-        val jsonContent = generateHealthJSON(weightData, exerciseData, vo2maxData, "AUTO_FULL_EXPORT")  // MODIFICADO
+        val jsonContent = generateHealthJSON(
+            weightData,
+            exerciseData,
+            vo2maxData,
+            stepsData,
+            distanceData,
+            totalCaloriesData,
+            restingHRData,
+            oxygenSatData,
+            "AUTO_FULL_EXPORT"
+        )
 
         saveToDownloads(fileName, jsonContent)
 
@@ -113,13 +141,18 @@ class AutoExportWorker(
                     WeightRecord::class,
                     ExerciseSessionRecord::class,
                     SleepSessionRecord::class,
-                    Vo2MaxRecord::class  // AGREGADO
+                    Vo2MaxRecord::class,
+                    StepsRecord::class,
+                    DistanceRecord::class,
+                    TotalCaloriesBurnedRecord::class,
+                    RestingHeartRateRecord::class,
+                    OxygenSaturationRecord::class
                 )
             )
         )
         tokenManager.saveChangesToken(token)
 
-        Log.d(TAG, "✅ Export completo: ${weightData.size} weight + ${exerciseData.size} exercises + ${vo2maxData.size} VO2Max")
+        Log.d(TAG, "✅ Export completo: ${weightData.size} weight + ${exerciseData.size} exercises + ${vo2maxData.size} VO2Max + ${stepsData.size} steps + ${distanceData.size} distance + ${totalCaloriesData.size} calories + ${restingHRData.size} RHR + ${oxygenSatData.size} SpO2")
         Log.d(TAG, "Token guardado para próximos exports incrementales")
     }
 
@@ -139,7 +172,13 @@ class AutoExportWorker(
         val weightChanges = mutableListOf<Map<String, Any?>>()
         val exerciseChanges = mutableListOf<Map<String, Any?>>()
         val sleepChanges = mutableListOf<Map<String, Any?>>()
-        val vo2maxChanges = mutableListOf<Map<String, Any?>>()  // AGREGADO
+        val vo2maxChanges = mutableListOf<Map<String, Any?>>()
+        // v1.7.0 - Essential Metrics
+        val stepsChanges = mutableListOf<Map<String, Any?>>()
+        val distanceChanges = mutableListOf<Map<String, Any?>>()
+        val totalCaloriesChanges = mutableListOf<Map<String, Any?>>()
+        val restingHRChanges = mutableListOf<Map<String, Any?>>()
+        val oxygenSatChanges = mutableListOf<Map<String, Any?>>()
         val deletions = mutableListOf<String>()
 
         changesResponse.changes.forEach { change ->
@@ -155,15 +194,64 @@ class AutoExportWorker(
                             ))
                             Log.d(TAG, "  + Weight change detected")
                         }
-                        is Vo2MaxRecord -> {  // AGREGADO
+                        is Vo2MaxRecord -> {
                             vo2maxChanges.add(mapOf(
                                 "timestamp" to record.time.toString(),
                                 "vo2_ml_kg_min" to record.vo2MillilitersPerMinuteKilogram,
-                                "measurement_method" to record.measurementMethod,
+                                "measurement_method" to getMeasurementMethodName(record.measurementMethod),
                                 "source" to record.metadata.dataOrigin.packageName,
                                 "change_type" to "UPSERT"
                             ))
                             Log.d(TAG, "  + VO2Max change detected")
+                        }
+                        // v1.7.0 - Essential Metrics
+                        is StepsRecord -> {
+                            stepsChanges.add(mapOf(
+                                "start_time" to record.startTime.toString(),
+                                "end_time" to record.endTime.toString(),
+                                "count" to record.count,
+                                "source" to record.metadata.dataOrigin.packageName,
+                                "change_type" to "UPSERT"
+                            ))
+                            Log.d(TAG, "  + Steps change detected")
+                        }
+                        is DistanceRecord -> {
+                            distanceChanges.add(mapOf(
+                                "start_time" to record.startTime.toString(),
+                                "end_time" to record.endTime.toString(),
+                                "distance_meters" to record.distance.inMeters,
+                                "source" to record.metadata.dataOrigin.packageName,
+                                "change_type" to "UPSERT"
+                            ))
+                            Log.d(TAG, "  + Distance change detected")
+                        }
+                        is TotalCaloriesBurnedRecord -> {
+                            totalCaloriesChanges.add(mapOf(
+                                "start_time" to record.startTime.toString(),
+                                "end_time" to record.endTime.toString(),
+                                "energy_kcal" to record.energy.inKilocalories,
+                                "source" to record.metadata.dataOrigin.packageName,
+                                "change_type" to "UPSERT"
+                            ))
+                            Log.d(TAG, "  + Total Calories change detected")
+                        }
+                        is RestingHeartRateRecord -> {
+                            restingHRChanges.add(mapOf(
+                                "timestamp" to record.time.toString(),
+                                "bpm" to record.beatsPerMinute,
+                                "source" to record.metadata.dataOrigin.packageName,
+                                "change_type" to "UPSERT"
+                            ))
+                            Log.d(TAG, "  + Resting Heart Rate change detected")
+                        }
+                        is OxygenSaturationRecord -> {
+                            oxygenSatChanges.add(mapOf(
+                                "timestamp" to record.time.toString(),
+                                "percentage" to record.percentage.value,
+                                "source" to record.metadata.dataOrigin.packageName,
+                                "change_type" to "UPSERT"
+                            ))
+                            Log.d(TAG, "  + Oxygen Saturation change detected")
                         }
                         is ExerciseSessionRecord -> {
                             val durationMinutes = try {
@@ -235,7 +323,9 @@ class AutoExportWorker(
         }
 
         if (weightChanges.isEmpty() && exerciseChanges.isEmpty() && sleepChanges.isEmpty() &&
-            vo2maxChanges.isEmpty() && deletions.isEmpty()) {  // MODIFICADO
+            vo2maxChanges.isEmpty() && stepsChanges.isEmpty() && distanceChanges.isEmpty() &&
+            totalCaloriesChanges.isEmpty() && restingHRChanges.isEmpty() && oxygenSatChanges.isEmpty() &&
+            deletions.isEmpty()) {
             Log.d(TAG, "ℹ️ No hay cambios desde último export")
             tokenManager.saveChangesToken(changesResponse.nextChangesToken)
             return
@@ -243,12 +333,23 @@ class AutoExportWorker(
 
         val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"))
         val fileName = "health_data_AUTO_DIFF_${timestamp}.json"
-        val jsonContent = generateDifferentialJSON(weightChanges, exerciseChanges, sleepChanges, vo2maxChanges, deletions)  // MODIFICADO
+        val jsonContent = generateDifferentialJSON(
+            weightChanges,
+            exerciseChanges,
+            sleepChanges,
+            vo2maxChanges,
+            stepsChanges,
+            distanceChanges,
+            totalCaloriesChanges,
+            restingHRChanges,
+            oxygenSatChanges,
+            deletions
+        )
 
         saveToDownloads(fileName, jsonContent)
         tokenManager.saveChangesToken(changesResponse.nextChangesToken)
 
-        Log.d(TAG, "✅ Export diferencial: ${weightChanges.size} weight + ${exerciseChanges.size} exercises + ${sleepChanges.size} sleep + ${vo2maxChanges.size} VO2Max + ${deletions.size} deletions")
+        Log.d(TAG, "✅ Export diferencial: ${weightChanges.size} weight + ${exerciseChanges.size} exercises + ${sleepChanges.size} sleep + ${vo2maxChanges.size} VO2Max + ${stepsChanges.size} steps + ${distanceChanges.size} distance + ${totalCaloriesChanges.size} calories + ${restingHRChanges.size} RHR + ${oxygenSatChanges.size} SpO2 + ${deletions.size} deletions")
     }
 
     private fun saveToDownloads(fileName: String, content: String) {
@@ -354,7 +455,6 @@ class AutoExportWorker(
         }
     }
 
-    // AGREGADO: Nueva función para leer VO2Max
     private suspend fun readVo2MaxRecords(
         healthConnectManager: HealthConnectManager,
         startTime: Instant,
@@ -377,7 +477,116 @@ class AutoExportWorker(
         }
     }
 
-    // AGREGADO: Helper para nombres de método de medición
+    // v1.7.0 - NUEVAS FUNCIONES PARA 5 MÉTRICAS ESENCIALES
+
+    private suspend fun readStepsRecords(
+        healthConnectManager: HealthConnectManager,
+        startTime: Instant,
+        endTime: Instant
+    ): List<Map<String, Any?>> {
+        return try {
+            val records = healthConnectManager.readStepsRecords(startTime, endTime)
+
+            records.map { record ->
+                mapOf(
+                    "start_time" to record.startTime.atZone(record.startZoneOffset ?: ZoneId.systemDefault()).toString(),
+                    "end_time" to record.endTime.atZone(record.endZoneOffset ?: ZoneId.systemDefault()).toString(),
+                    "count" to record.count,
+                    "source" to record.metadata.dataOrigin.packageName
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reading Steps records", e)
+            emptyList()
+        }
+    }
+
+    private suspend fun readDistanceRecords(
+        healthConnectManager: HealthConnectManager,
+        startTime: Instant,
+        endTime: Instant
+    ): List<Map<String, Any?>> {
+        return try {
+            val records = healthConnectManager.readDistanceRecords(startTime, endTime)
+
+            records.map { record ->
+                mapOf(
+                    "start_time" to record.startTime.atZone(record.startZoneOffset ?: ZoneId.systemDefault()).toString(),
+                    "end_time" to record.endTime.atZone(record.endZoneOffset ?: ZoneId.systemDefault()).toString(),
+                    "distance_meters" to record.distance.inMeters,
+                    "source" to record.metadata.dataOrigin.packageName
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reading Distance records", e)
+            emptyList()
+        }
+    }
+
+    private suspend fun readTotalCaloriesRecords(
+        healthConnectManager: HealthConnectManager,
+        startTime: Instant,
+        endTime: Instant
+    ): List<Map<String, Any?>> {
+        return try {
+            val records = healthConnectManager.readTotalCaloriesBurnedRecords(startTime, endTime)
+
+            records.map { record ->
+                mapOf(
+                    "start_time" to record.startTime.atZone(record.startZoneOffset ?: ZoneId.systemDefault()).toString(),
+                    "end_time" to record.endTime.atZone(record.endZoneOffset ?: ZoneId.systemDefault()).toString(),
+                    "energy_kcal" to record.energy.inKilocalories,
+                    "source" to record.metadata.dataOrigin.packageName
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reading Total Calories records", e)
+            emptyList()
+        }
+    }
+
+    private suspend fun readRestingHeartRateRecords(
+        healthConnectManager: HealthConnectManager,
+        startTime: Instant,
+        endTime: Instant
+    ): List<Map<String, Any?>> {
+        return try {
+            val records = healthConnectManager.readRestingHeartRateRecords(startTime, endTime)
+
+            records.map { record ->
+                mapOf(
+                    "timestamp" to record.time.atZone(record.zoneOffset ?: ZoneId.systemDefault()).toString(),
+                    "bpm" to record.beatsPerMinute,
+                    "source" to record.metadata.dataOrigin.packageName
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reading Resting Heart Rate records", e)
+            emptyList()
+        }
+    }
+
+    private suspend fun readOxygenSaturationRecords(
+        healthConnectManager: HealthConnectManager,
+        startTime: Instant,
+        endTime: Instant
+    ): List<Map<String, Any?>> {
+        return try {
+            val records = healthConnectManager.readOxygenSaturationRecords(startTime, endTime)
+
+            records.map { record ->
+                mapOf(
+                    "timestamp" to record.time.atZone(record.zoneOffset ?: ZoneId.systemDefault()).toString(),
+                    "percentage" to record.percentage.value,
+                    "source" to record.metadata.dataOrigin.packageName
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reading Oxygen Saturation records", e)
+            emptyList()
+        }
+    }
+
     private fun getMeasurementMethodName(method: Int): String {
         return when (method) {
             Vo2MaxRecord.MEASUREMENT_METHOD_OTHER -> "Other"
@@ -390,11 +599,15 @@ class AutoExportWorker(
         }
     }
 
-    // MODIFICADO: Ahora incluye VO2Max
     private fun generateHealthJSON(
         weightRecords: List<Map<String, Any?>>,
         exerciseData: List<Map<String, Any?>>,
         vo2maxData: List<Map<String, Any?>>,
+        stepsData: List<Map<String, Any?>>,
+        distanceData: List<Map<String, Any?>>,
+        totalCaloriesData: List<Map<String, Any?>>,
+        restingHRData: List<Map<String, Any?>>,
+        oxygenSatData: List<Map<String, Any?>>,
         exportType: String
     ): String {
         return buildString {
@@ -404,90 +617,64 @@ class AutoExportWorker(
             append("  \"data_source\": \"All Apps (No Filter - Filter in Python)\",\n")
             append("  \"storage_location\": \"Local - Downloads/$EXPORT_FOLDER\",\n")
             append("  \"auto_sync_compatible\": true,\n")
+
+            // Weight records
             append("  \"weight_records\": {\n")
             append("    \"count\": ${weightRecords.size},\n")
-            append("    \"data\": [\n")
-
-            weightRecords.forEachIndexed { index, record ->
-                append("      {\n")
-                record.forEach { (key, value) ->
-                    val valueStr = when (value) {
-                        is String -> "\"$value\""
-                        is Double -> String.format("%.2f", value)
-                        null -> "null"
-                        else -> value.toString()
-                    }
-                    append("        \"$key\": $valueStr")
-                    if (key != record.keys.last()) append(",")
-                    append("\n")
-                }
-                append("      }")
-                if (index < weightRecords.size - 1) append(",")
-                append("\n")
-            }
-
-            append("    ]\n")
+            append("    \"data\": ${serializeMapList(weightRecords)}\n")
             append("  },\n")
+
+            // Exercise sessions
             append("  \"exercise_sessions\": {\n")
             append("    \"count\": ${exerciseData.size},\n")
-            append("    \"data\": [\n")
-
-            exerciseData.forEachIndexed { index, session ->
-                append("      {\n")
-                session.forEach { (key, value) ->
-                    val valueStr = when (value) {
-                        is String -> "\"$value\""
-                        is Double -> String.format("%.2f", value)
-                        null -> "null"
-                        else -> value.toString()
-                    }
-                    append("        \"$key\": $valueStr")
-                    if (key != session.keys.last()) append(",")
-                    append("\n")
-                }
-                append("      }")
-                if (index < exerciseData.size - 1) append(",")
-                append("\n")
-            }
-
-            append("    ]\n")
+            append("    \"data\": ${serializeMapList(exerciseData)}\n")
             append("  },\n")
 
-            // AGREGADO: Sección VO2Max
+            // VO2Max records
             append("  \"vo2max_records\": {\n")
             append("    \"count\": ${vo2maxData.size},\n")
-            append("    \"data\": [\n")
+            append("    \"data\": ${serializeMapList(vo2maxData)}\n")
+            append("  },\n")
 
-            vo2maxData.forEachIndexed { index, record ->
-                append("      {\n")
-                record.forEach { (key, value) ->
-                    val valueStr = when (value) {
-                        is String -> "\"$value\""
-                        is Double -> String.format("%.2f", value)
-                        null -> "null"
-                        else -> value.toString()
-                    }
-                    append("        \"$key\": $valueStr")
-                    if (key != record.keys.last()) append(",")
-                    append("\n")
-                }
-                append("      }")
-                if (index < vo2maxData.size - 1) append(",")
-                append("\n")
-            }
+            // v1.7.0 - Essential Metrics
+            append("  \"steps_records\": {\n")
+            append("    \"count\": ${stepsData.size},\n")
+            append("    \"data\": ${serializeMapList(stepsData)}\n")
+            append("  },\n")
 
-            append("    ]\n")
+            append("  \"distance_records\": {\n")
+            append("    \"count\": ${distanceData.size},\n")
+            append("    \"data\": ${serializeMapList(distanceData)}\n")
+            append("  },\n")
+
+            append("  \"total_calories_records\": {\n")
+            append("    \"count\": ${totalCaloriesData.size},\n")
+            append("    \"data\": ${serializeMapList(totalCaloriesData)}\n")
+            append("  },\n")
+
+            append("  \"resting_heart_rate_records\": {\n")
+            append("    \"count\": ${restingHRData.size},\n")
+            append("    \"data\": ${serializeMapList(restingHRData)}\n")
+            append("  },\n")
+
+            append("  \"oxygen_saturation_records\": {\n")
+            append("    \"count\": ${oxygenSatData.size},\n")
+            append("    \"data\": ${serializeMapList(oxygenSatData)}\n")
             append("  }\n")
             append("}")
         }
     }
 
-    // MODIFICADO: Ahora incluye VO2Max changes
     private fun generateDifferentialJSON(
         weightChanges: List<Map<String, Any?>>,
         exerciseChanges: List<Map<String, Any?>>,
         sleepChanges: List<Map<String, Any?>>,
-        vo2maxChanges: List<Map<String, Any?>>,  // AGREGADO
+        vo2maxChanges: List<Map<String, Any?>>,
+        stepsChanges: List<Map<String, Any?>>,
+        distanceChanges: List<Map<String, Any?>>,
+        totalCaloriesChanges: List<Map<String, Any?>>,
+        restingHRChanges: List<Map<String, Any?>>,
+        oxygenSatChanges: List<Map<String, Any?>>,
         deletions: List<String>
     ): String {
         return buildString {
@@ -498,139 +685,137 @@ class AutoExportWorker(
             append("  \"storage_location\": \"Local - Downloads/$EXPORT_FOLDER\",\n")
             append("  \"auto_sync_compatible\": true,\n")
             append("  \"last_export_time\": \"${java.time.Instant.ofEpochMilli(tokenManager.getLastExportTime())}\",\n")
+
+            // Weight changes
             append("  \"weight_changes\": {\n")
             append("    \"count\": ${weightChanges.size},\n")
-            append("    \"data\": [\n")
-
-            weightChanges.forEachIndexed { index, record ->
-                append("      {\n")
-                record.forEach { (key, value) ->
-                    val valueStr = when (value) {
-                        is String -> "\"$value\""
-                        is Double -> String.format("%.2f", value)
-                        null -> "null"
-                        else -> value.toString()
-                    }
-                    append("        \"$key\": $valueStr")
-                    if (key != record.keys.last()) append(",")
-                    append("\n")
-                }
-                append("      }")
-                if (index < weightChanges.size - 1) append(",")
-                append("\n")
-            }
-
-            append("    ]\n")
+            append("    \"data\": ${serializeMapList(weightChanges)}\n")
             append("  },\n")
+
+            // Exercise changes
             append("  \"exercise_changes\": {\n")
             append("    \"count\": ${exerciseChanges.size},\n")
-            append("    \"data\": [\n")
-
-            exerciseChanges.forEachIndexed { index, session ->
-                append("      {\n")
-                session.forEach { (key, value) ->
-                    val valueStr = when (value) {
-                        is String -> "\"$value\""
-                        is Double -> String.format("%.2f", value)
-                        null -> "null"
-                        else -> value.toString()
-                    }
-                    append("        \"$key\": $valueStr")
-                    if (key != session.keys.last()) append(",")
-                    append("\n")
-                }
-                append("      }")
-                if (index < exerciseChanges.size - 1) append(",")
-                append("\n")
-            }
-
-            append("    ]\n")
+            append("    \"data\": ${serializeMapList(exerciseChanges)}\n")
             append("  },\n")
+
+            // Sleep changes
             append("  \"sleep_changes\": {\n")
             append("    \"count\": ${sleepChanges.size},\n")
-            append("    \"data\": [\n")
-
-            sleepChanges.forEachIndexed { index, session ->
-                append("      {\n")
-                session.forEach { (key, value) ->
-                    val valueStr = when (value) {
-                        is String -> "\"$value\""
-                        is List<*> -> {
-                            // Serializar stages como array JSON
-                            val stages = value as List<Map<String, Any?>>
-                            buildString {
-                                append("[\n")
-                                stages.forEachIndexed { stageIndex, stage ->
-                                    append("          {")
-                                    stage.entries.forEachIndexed { entryIndex, (k, v) ->
-                                        append("\"$k\": ")
-                                        when (v) {
-                                            is String -> append("\"$v\"")
-                                            else -> append("\"$v\"")
-                                        }
-                                        if (entryIndex < stage.size - 1) append(", ")
-                                    }
-                                    append("}")
-                                    if (stageIndex < stages.size - 1) append(",")
-                                    append("\n")
-                                }
-                                append("        ]")
-                            }
-                        }
-                        null -> "null"
-                        else -> value.toString()
-                    }
-                    append("        \"$key\": $valueStr")
-                    if (key != session.keys.last()) append(",")
-                    append("\n")
-                }
-                append("      }")
-                if (index < sleepChanges.size - 1) append(",")
-                append("\n")
-            }
-
-            append("    ]\n")
+            append("    \"data\": ${serializeMapListWithNested(sleepChanges)}\n")
             append("  },\n")
 
-            // AGREGADO: Sección VO2Max changes
+            // VO2Max changes
             append("  \"vo2max_changes\": {\n")
             append("    \"count\": ${vo2maxChanges.size},\n")
-            append("    \"data\": [\n")
-
-            vo2maxChanges.forEachIndexed { index, record ->
-                append("      {\n")
-                record.forEach { (key, value) ->
-                    val valueStr = when (value) {
-                        is String -> "\"$value\""
-                        is Double -> String.format("%.2f", value)
-                        null -> "null"
-                        else -> value.toString()
-                    }
-                    append("        \"$key\": $valueStr")
-                    if (key != record.keys.last()) append(",")
-                    append("\n")
-                }
-                append("      }")
-                if (index < vo2maxChanges.size - 1) append(",")
-                append("\n")
-            }
-
-            append("    ]\n")
+            append("    \"data\": ${serializeMapList(vo2maxChanges)}\n")
             append("  },\n")
 
+            // v1.7.0 - Essential Metrics changes
+            append("  \"steps_changes\": {\n")
+            append("    \"count\": ${stepsChanges.size},\n")
+            append("    \"data\": ${serializeMapList(stepsChanges)}\n")
+            append("  },\n")
+
+            append("  \"distance_changes\": {\n")
+            append("    \"count\": ${distanceChanges.size},\n")
+            append("    \"data\": ${serializeMapList(distanceChanges)}\n")
+            append("  },\n")
+
+            append("  \"total_calories_changes\": {\n")
+            append("    \"count\": ${totalCaloriesChanges.size},\n")
+            append("    \"data\": ${serializeMapList(totalCaloriesChanges)}\n")
+            append("  },\n")
+
+            append("  \"resting_heart_rate_changes\": {\n")
+            append("    \"count\": ${restingHRChanges.size},\n")
+            append("    \"data\": ${serializeMapList(restingHRChanges)}\n")
+            append("  },\n")
+
+            append("  \"oxygen_saturation_changes\": {\n")
+            append("    \"count\": ${oxygenSatChanges.size},\n")
+            append("    \"data\": ${serializeMapList(oxygenSatChanges)}\n")
+            append("  },\n")
+
+            // Deletions
             append("  \"deletions\": {\n")
             append("    \"count\": ${deletions.size},\n")
             append("    \"record_ids\": [\n")
-
             deletions.forEachIndexed { index, id ->
                 append("      \"$id\"")
                 if (index < deletions.size - 1) append(",")
                 append("\n")
             }
-
             append("    ]\n")
             append("  }\n")
             append("}")
+        }
+    }
+
+    private fun serializeMapList(list: List<Map<String, Any?>>): String {
+        if (list.isEmpty()) return "[]"
+        return buildString {
+            append("[\n")
+            list.forEachIndexed { index, map ->
+                append("      {\n")
+                map.entries.forEachIndexed { entryIndex, (key, value) ->
+                    append("        \"$key\": ")
+                    when (value) {
+                        is String -> append("\"$value\"")
+                        is Double -> append(String.format("%.2f", value))
+                        null -> append("null")
+                        else -> append(value.toString())
+                    }
+                    if (entryIndex < map.size - 1) append(",")
+                    append("\n")
+                }
+                append("      }")
+                if (index < list.size - 1) append(",")
+                append("\n")
+            }
+            append("    ]")
+        }
+    }
+
+    private fun serializeMapListWithNested(list: List<Map<String, Any?>>): String {
+        if (list.isEmpty()) return "[]"
+        return buildString {
+            append("[\n")
+            list.forEachIndexed { index, map ->
+                append("      {\n")
+                map.entries.forEachIndexed { entryIndex, (key, value) ->
+                    append("        \"$key\": ")
+                    when (value) {
+                        is String -> append("\"$value\"")
+                        is List<*> -> {
+                            val stages = value as List<Map<String, Any?>>
+                            append("[\n")
+                            stages.forEachIndexed { stageIndex, stage ->
+                                append("          {")
+                                stage.entries.forEachIndexed { sEntryIndex, (k, v) ->
+                                    append("\"$k\": ")
+                                    when (v) {
+                                        is String -> append("\"$v\"")
+                                        else -> append("\"$v\"")
+                                    }
+                                    if (sEntryIndex < stage.size - 1) append(", ")
+                                }
+                                append("}")
+                                if (stageIndex < stages.size - 1) append(",")
+                                append("\n")
+                            }
+                            append("        ]")
+                        }
+                        null -> append("null")
+                        else -> append(value.toString())
+                    }
+                    if (entryIndex < map.size - 1) append(",")
+                    append("\n")
+                }
+                append("      }")
+                if (index < list.size - 1) append(",")
+                append("\n")
+            }
+            append("    ]")
         }
     }
 

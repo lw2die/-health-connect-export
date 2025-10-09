@@ -117,11 +117,74 @@ class JsonExportWorker(
                         )
                     }
 
+                // STEPS DATA - v1.7.0
+                val stepsData = healthConnectManager.readStepsRecords(startTime, endTime)
+                    .filter { it.metadata.dataOrigin.packageName == "com.sec.android.app.shealth" }
+                    .map { record ->
+                        mapOf(
+                            "start_time" to record.startTime.atZone(record.startZoneOffset ?: ZoneId.systemDefault()).toString(),
+                            "end_time" to record.endTime.atZone(record.endZoneOffset ?: ZoneId.systemDefault()).toString(),
+                            "count" to record.count,
+                            "source" to record.metadata.dataOrigin.packageName
+                        )
+                    }
+
+                // DISTANCE DATA - v1.7.0
+                val distanceData = healthConnectManager.readDistanceRecords(startTime, endTime)
+                    .filter { it.metadata.dataOrigin.packageName == "com.sec.android.app.shealth" }
+                    .map { record ->
+                        mapOf(
+                            "start_time" to record.startTime.atZone(record.startZoneOffset ?: ZoneId.systemDefault()).toString(),
+                            "end_time" to record.endTime.atZone(record.endZoneOffset ?: ZoneId.systemDefault()).toString(),
+                            "distance_meters" to record.distance.inMeters,
+                            "source" to record.metadata.dataOrigin.packageName
+                        )
+                    }
+
+                // TOTAL CALORIES DATA - v1.7.0
+                val totalCaloriesData = healthConnectManager.readTotalCaloriesBurnedRecords(startTime, endTime)
+                    .filter { it.metadata.dataOrigin.packageName == "com.sec.android.app.shealth" }
+                    .map { record ->
+                        mapOf(
+                            "start_time" to record.startTime.atZone(record.startZoneOffset ?: ZoneId.systemDefault()).toString(),
+                            "end_time" to record.endTime.atZone(record.endZoneOffset ?: ZoneId.systemDefault()).toString(),
+                            "energy_kcal" to record.energy.inKilocalories,
+                            "source" to record.metadata.dataOrigin.packageName
+                        )
+                    }
+
+                // RESTING HEART RATE DATA - v1.7.0
+                val restingHRData = healthConnectManager.readRestingHeartRateRecords(startTime, endTime)
+                    .filter { it.metadata.dataOrigin.packageName == "com.sec.android.app.shealth" }
+                    .map { record ->
+                        mapOf(
+                            "timestamp" to record.time.atZone(record.zoneOffset ?: ZoneId.systemDefault()).toString(),
+                            "bpm" to record.beatsPerMinute,
+                            "source" to record.metadata.dataOrigin.packageName
+                        )
+                    }
+
+                // OXYGEN SATURATION DATA - v1.7.0
+                val oxygenSaturationData = healthConnectManager.readOxygenSaturationRecords(startTime, endTime)
+                    .filter { it.metadata.dataOrigin.packageName == "com.sec.android.app.shealth" }
+                    .map { record ->
+                        mapOf(
+                            "timestamp" to record.time.atZone(record.zoneOffset ?: ZoneId.systemDefault()).toString(),
+                            "percentage" to record.percentage.value,
+                            "source" to record.metadata.dataOrigin.packageName
+                        )
+                    }
+
                 val jsonContent = HealthDataSerializer.generateHealthJSON(
                     weightRecords = weightData,
                     exerciseData = exerciseData,
                     sleepData = sleepData,
                     vo2maxData = vo2maxData,
+                    stepsData = stepsData,
+                    distanceData = distanceData,
+                    totalCaloriesData = totalCaloriesData,
+                    restingHRData = restingHRData,
+                    oxygenSaturationData = oxygenSaturationData,
                     exportType = "AUTO_SAMSUNG_ONLY_WORKER"
                 )
 
