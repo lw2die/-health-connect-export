@@ -119,6 +119,7 @@ class AutoExportWorker(
         val startTime = Instant.EPOCH
 
         val exerciseData = readExerciseSessions(healthConnectManager, startTime, endTime)
+        val sleepData = readSleepSessions(healthConnectManager, startTime, endTime) // v1.8.1 - AGREGADO
         val weightData = readWeightRecords(client, startTime, endTime)
         val vo2maxData = readVo2MaxRecords(healthConnectManager, startTime, endTime)
         // v1.7.0 - Essential Metrics
@@ -138,6 +139,7 @@ class AutoExportWorker(
         val jsonContent = generateHealthJSON(
             weightData,
             exerciseData,
+            sleepData, // v1.8.1 - AGREGADO
             vo2maxData,
             stepsData,
             distanceData,
@@ -174,7 +176,8 @@ class AutoExportWorker(
         )
         tokenManager.saveChangesToken(token)
 
-        Log.d(TAG, "✅ Export completo: ${weightData.size}peso +${exerciseData.size}ej +${vo2maxData.size}VO2 +${stepsData.size}pasos +${distanceData.size}dist +${totalCaloriesData.size}cal +${restingHRData.size}RHR +${oxygenSatData.size}SpO2 +${heightData.size}altura +${bodyFatData.size}grasa +${leanBodyMassData.size}magra +${boneMassData.size}hueso")
+        // v1.8.1 - Log actualizado con sleep
+        Log.d(TAG, "✅ Export completo: ${weightData.size}peso +${exerciseData.size}ej +${sleepData.size}sueño +${vo2maxData.size}VO2 +${stepsData.size}pasos +${distanceData.size}dist +${totalCaloriesData.size}cal +${restingHRData.size}RHR +${oxygenSatData.size}SpO2 +${heightData.size}altura +${bodyFatData.size}grasa +${leanBodyMassData.size}magra +${boneMassData.size}hueso")
         Log.d(TAG, "Token guardado para próximos exports incrementales")
     }
 
@@ -499,6 +502,44 @@ class AutoExportWorker(
         }
     }
 
+    // v1.8.1 - FUNCIÓN AGREGADA: readSleepSessions
+    private suspend fun readSleepSessions(
+        healthConnectManager: HealthConnectManager,
+        startTime: Instant,
+        endTime: Instant
+    ): List<Map<String, Any?>> {
+        return try {
+            val allSleepRecords = healthConnectManager.readSleepSessions(startTime, endTime)
+
+            allSleepRecords.map { record ->
+                val durationMinutes = try {
+                    java.time.Duration.between(record.startTime, record.endTime).toMinutes()
+                } catch (e: Exception) { 0L }
+
+                mapOf(
+                    "session_id" to record.metadata.id,
+                    "start_time" to record.startTime.toString(),
+                    "end_time" to record.endTime.toString(),
+                    "duration_minutes" to durationMinutes,
+                    "title" to (record.title ?: "Sleep Session"),
+                    "notes" to record.notes,
+                    "stages" to record.stages.map { stage ->
+                        mapOf(
+                            "start_time" to stage.startTime.toString(),
+                            "end_time" to stage.endTime.toString(),
+                            "stage_type" to stage.stage,
+                            "stage_name" to HealthDataSerializer.getSleepStageName(stage.stage)
+                        )
+                    },
+                    "source" to record.metadata.dataOrigin.packageName
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reading sleep sessions", e)
+            emptyList()
+        }
+    }
+
     private suspend fun readWeightRecords(
         client: HealthConnectClient,
         startTime: Instant,
@@ -757,6 +798,7 @@ class AutoExportWorker(
     private fun generateHealthJSON(
         weightRecords: List<Map<String, Any?>>,
         exerciseData: List<Map<String, Any?>>,
+        sleepData: List<Map<String, Any?>>, // v1.8.1 - AGREGADO
         vo2maxData: List<Map<String, Any?>>,
         stepsData: List<Map<String, Any?>>,
         distanceData: List<Map<String, Any?>>,
@@ -787,6 +829,12 @@ class AutoExportWorker(
             append("  \"exercise_sessions\": {\n")
             append("    \"count\": ${exerciseData.size},\n")
             append("    \"data\": ${serializeMapList(exerciseData)}\n")
+            append("  },\n")
+
+            // v1.8.1 - Sleep sessions AGREGADO
+            append("  \"sleep_sessions\": {\n")
+            append("    \"count\": ${sleepData.size},\n")
+            append("    \"data\": ${serializeMapListWithNested(sleepData)}\n")
             append("  },\n")
 
             // VO2Max records
