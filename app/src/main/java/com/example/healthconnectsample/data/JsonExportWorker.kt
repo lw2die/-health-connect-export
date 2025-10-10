@@ -175,6 +175,50 @@ class JsonExportWorker(
                         )
                     }
 
+                // HEIGHT DATA - v1.8.0
+                val heightData = healthConnectManager.readHeightRecords(startTime, endTime)
+                    .filter { it.metadata.dataOrigin.packageName == "com.sec.android.app.shealth" }
+                    .map { record ->
+                        mapOf(
+                            "timestamp" to record.time.atZone(record.zoneOffset ?: ZoneId.systemDefault()).toString(),
+                            "height_meters" to record.height.inMeters,
+                            "source" to record.metadata.dataOrigin.packageName
+                        )
+                    }
+
+                // BODY FAT DATA - v1.8.0
+                val bodyFatData = healthConnectManager.readBodyFatRecords(startTime, endTime)
+                    .filter { it.metadata.dataOrigin.packageName == "com.sec.android.app.shealth" }
+                    .map { record ->
+                        mapOf(
+                            "timestamp" to record.time.atZone(record.zoneOffset ?: ZoneId.systemDefault()).toString(),
+                            "percentage" to record.percentage.value,
+                            "source" to record.metadata.dataOrigin.packageName
+                        )
+                    }
+
+                // LEAN BODY MASS DATA - v1.8.0
+                val leanBodyMassData = healthConnectManager.readLeanBodyMassRecords(startTime, endTime)
+                    .filter { it.metadata.dataOrigin.packageName == "com.sec.android.app.shealth" }
+                    .map { record ->
+                        mapOf(
+                            "timestamp" to record.time.atZone(record.zoneOffset ?: ZoneId.systemDefault()).toString(),
+                            "mass_kg" to record.mass.inKilograms,
+                            "source" to record.metadata.dataOrigin.packageName
+                        )
+                    }
+
+                // BONE MASS DATA - v1.8.0
+                val boneMassData = healthConnectManager.readBoneMassRecords(startTime, endTime)
+                    .filter { it.metadata.dataOrigin.packageName == "com.sec.android.app.shealth" }
+                    .map { record ->
+                        mapOf(
+                            "timestamp" to record.time.atZone(record.zoneOffset ?: ZoneId.systemDefault()).toString(),
+                            "mass_kg" to record.mass.inKilograms,
+                            "source" to record.metadata.dataOrigin.packageName
+                        )
+                    }
+
                 val jsonContent = HealthDataSerializer.generateHealthJSON(
                     weightRecords = weightData,
                     exerciseData = exerciseData,
@@ -185,6 +229,10 @@ class JsonExportWorker(
                     totalCaloriesData = totalCaloriesData,
                     restingHRData = restingHRData,
                     oxygenSaturationData = oxygenSaturationData,
+                    heightData = heightData,
+                    bodyFatData = bodyFatData,
+                    leanBodyMassData = leanBodyMassData,
+                    boneMassData = boneMassData,
                     exportType = "AUTO_SAMSUNG_ONLY_WORKER"
                 )
 

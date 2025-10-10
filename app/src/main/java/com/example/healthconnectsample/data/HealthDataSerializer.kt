@@ -27,6 +27,10 @@ object HealthDataSerializer {
         totalCaloriesData: List<Map<String, Any?>>,
         restingHRData: List<Map<String, Any?>>,
         oxygenSaturationData: List<Map<String, Any?>>,
+        heightData: List<Map<String, Any?>>,
+        bodyFatData: List<Map<String, Any?>>,
+        leanBodyMassData: List<Map<String, Any?>>,
+        boneMassData: List<Map<String, Any?>>,
         exportType: String
     ): String {
         return buildString {
@@ -69,6 +73,22 @@ object HealthDataSerializer {
             append("  \"oxygen_saturation_records\": {\n")
             append("    \"count\": ${oxygenSaturationData.size},\n")
             append("    \"data\": ${serializeList(oxygenSaturationData)}\n")
+            append("  },\n")
+            append("  \"height_records\": {\n")
+            append("    \"count\": ${heightData.size},\n")
+            append("    \"data\": ${serializeList(heightData)}\n")
+            append("  },\n")
+            append("  \"body_fat_records\": {\n")
+            append("    \"count\": ${bodyFatData.size},\n")
+            append("    \"data\": ${serializeList(bodyFatData)}\n")
+            append("  },\n")
+            append("  \"lean_body_mass_records\": {\n")
+            append("    \"count\": ${leanBodyMassData.size},\n")
+            append("    \"data\": ${serializeList(leanBodyMassData)}\n")
+            append("  },\n")
+            append("  \"bone_mass_records\": {\n")
+            append("    \"count\": ${boneMassData.size},\n")
+            append("    \"data\": ${serializeList(boneMassData)}\n")
             append("  }\n")
             append("}")
         }

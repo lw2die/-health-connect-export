@@ -30,6 +30,10 @@ import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.Vo2MaxRecord
 import androidx.health.connect.client.records.RestingHeartRateRecord
 import androidx.health.connect.client.records.OxygenSaturationRecord
+import androidx.health.connect.client.records.HeightRecord
+import androidx.health.connect.client.records.BodyFatRecord
+import androidx.health.connect.client.records.LeanBodyMassRecord
+import androidx.health.connect.client.records.BoneMassRecord
 import androidx.health.connect.client.records.metadata.Metadata
 import androidx.health.connect.client.units.Mass
 import androidx.lifecycle.ViewModel
@@ -66,7 +70,16 @@ class InputReadingsViewModel(private val healthConnectManager: HealthConnectMana
         HealthPermission.getReadPermission(RestingHeartRateRecord::class),
         HealthPermission.getWritePermission(RestingHeartRateRecord::class),
         HealthPermission.getReadPermission(OxygenSaturationRecord::class),
-        HealthPermission.getWritePermission(OxygenSaturationRecord::class)
+        HealthPermission.getWritePermission(OxygenSaturationRecord::class),
+        // v1.8.0 - Body Measurements Group 2
+        HealthPermission.getReadPermission(HeightRecord::class),
+        HealthPermission.getWritePermission(HeightRecord::class),
+        HealthPermission.getReadPermission(BodyFatRecord::class),
+        HealthPermission.getWritePermission(BodyFatRecord::class),
+        HealthPermission.getReadPermission(LeanBodyMassRecord::class),
+        HealthPermission.getWritePermission(LeanBodyMassRecord::class),
+        HealthPermission.getReadPermission(BoneMassRecord::class),
+        HealthPermission.getWritePermission(BoneMassRecord::class)
     )
 
     var weeklyAvg: MutableState<Mass?> = mutableStateOf(Mass.kilograms(0.0))

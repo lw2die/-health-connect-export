@@ -297,6 +297,62 @@ fun WelcomeScreen(
                     )
                 }
 
+                // v1.8.0 - HEIGHT DATA
+                val allHeightRecords = healthConnectManager.readHeightRecords(startTime, endTime)
+                val samsungHeight = allHeightRecords.filter {
+                    it.metadata.dataOrigin.packageName == "com.sec.android.app.shealth"
+                }
+
+                val heightData = samsungHeight.map { record ->
+                    mapOf(
+                        "timestamp" to record.time.atZone(record.zoneOffset ?: ZoneId.systemDefault()).toString(),
+                        "height_meters" to record.height.inMeters,
+                        "source" to record.metadata.dataOrigin.packageName
+                    )
+                }
+
+                // v1.8.0 - BODY FAT DATA
+                val allBodyFatRecords = healthConnectManager.readBodyFatRecords(startTime, endTime)
+                val samsungBodyFat = allBodyFatRecords.filter {
+                    it.metadata.dataOrigin.packageName == "com.sec.android.app.shealth"
+                }
+
+                val bodyFatData = samsungBodyFat.map { record ->
+                    mapOf(
+                        "timestamp" to record.time.atZone(record.zoneOffset ?: ZoneId.systemDefault()).toString(),
+                        "percentage" to record.percentage.value,
+                        "source" to record.metadata.dataOrigin.packageName
+                    )
+                }
+
+                // v1.8.0 - LEAN BODY MASS DATA
+                val allLeanBodyMassRecords = healthConnectManager.readLeanBodyMassRecords(startTime, endTime)
+                val samsungLeanBodyMass = allLeanBodyMassRecords.filter {
+                    it.metadata.dataOrigin.packageName == "com.sec.android.app.shealth"
+                }
+
+                val leanBodyMassData = samsungLeanBodyMass.map { record ->
+                    mapOf(
+                        "timestamp" to record.time.atZone(record.zoneOffset ?: ZoneId.systemDefault()).toString(),
+                        "mass_kg" to record.mass.inKilograms,
+                        "source" to record.metadata.dataOrigin.packageName
+                    )
+                }
+
+                // v1.8.0 - BONE MASS DATA
+                val allBoneMassRecords = healthConnectManager.readBoneMassRecords(startTime, endTime)
+                val samsungBoneMass = allBoneMassRecords.filter {
+                    it.metadata.dataOrigin.packageName == "com.sec.android.app.shealth"
+                }
+
+                val boneMassData = samsungBoneMass.map { record ->
+                    mapOf(
+                        "timestamp" to record.time.atZone(record.zoneOffset ?: ZoneId.systemDefault()).toString(),
+                        "mass_kg" to record.mass.inKilograms,
+                        "source" to record.metadata.dataOrigin.packageName
+                    )
+                }
+
                 val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"))
                 val fileName = "health_data_SAMSUNG_MANUAL_${timestamp}.json"
 
@@ -341,6 +397,23 @@ fun WelcomeScreen(
                     append("  \"oxygen_saturation_records\": {\n")
                     append("    \"count\": ${oxygenSatData.size},\n")
                     append("    \"data\": ${serializeList(oxygenSatData)}\n")
+                    append("  },\n")
+                    // v1.8.0 - Body Measurements Group 2
+                    append("  \"height_records\": {\n")
+                    append("    \"count\": ${heightData.size},\n")
+                    append("    \"data\": ${serializeList(heightData)}\n")
+                    append("  },\n")
+                    append("  \"body_fat_records\": {\n")
+                    append("    \"count\": ${bodyFatData.size},\n")
+                    append("    \"data\": ${serializeList(bodyFatData)}\n")
+                    append("  },\n")
+                    append("  \"lean_body_mass_records\": {\n")
+                    append("    \"count\": ${leanBodyMassData.size},\n")
+                    append("    \"data\": ${serializeList(leanBodyMassData)}\n")
+                    append("  },\n")
+                    append("  \"bone_mass_records\": {\n")
+                    append("    \"count\": ${boneMassData.size},\n")
+                    append("    \"data\": ${serializeList(boneMassData)}\n")
                     append("  }\n")
                     append("}")
                 }
@@ -365,7 +438,7 @@ fun WelcomeScreen(
 
                 Toast.makeText(
                     context,
-                    "Export manual: ${weightData.size} peso + ${exerciseData.size} ejercicios + ${sleepData.size} sueño + ${vo2MaxData.size} VO2Max + ${stepsData.size} pasos + ${distanceData.size} distancia + ${totalCaloriesData.size} calorías + ${restingHRData.size} FC reposo + ${oxygenSatData.size} SpO2",
+                    "Export: ${weightData.size}peso +${exerciseData.size}ej +${sleepData.size}sueño +${vo2MaxData.size}VO2 +${stepsData.size}pasos +${distanceData.size}dist +${totalCaloriesData.size}cal +${restingHRData.size}RHR +${oxygenSatData.size}SpO2 +${heightData.size}altura +${bodyFatData.size}grasa +${leanBodyMassData.size}magra +${boneMassData.size}hueso",
                     Toast.LENGTH_LONG
                 ).show()
 

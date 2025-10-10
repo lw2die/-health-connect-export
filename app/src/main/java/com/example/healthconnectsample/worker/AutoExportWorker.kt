@@ -16,6 +16,10 @@ import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
 import androidx.health.connect.client.records.RestingHeartRateRecord
 import androidx.health.connect.client.records.OxygenSaturationRecord
+import androidx.health.connect.client.records.HeightRecord
+import androidx.health.connect.client.records.BodyFatRecord
+import androidx.health.connect.client.records.LeanBodyMassRecord
+import androidx.health.connect.client.records.BoneMassRecord
 import androidx.health.connect.client.request.ChangesTokenRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
@@ -70,7 +74,12 @@ class AutoExportWorker(
                 HealthPermission.getReadPermission(DistanceRecord::class),
                 HealthPermission.getReadPermission(TotalCaloriesBurnedRecord::class),
                 HealthPermission.getReadPermission(RestingHeartRateRecord::class),
-                HealthPermission.getReadPermission(OxygenSaturationRecord::class)
+                HealthPermission.getReadPermission(OxygenSaturationRecord::class),
+                // v1.8.0 - Body Measurements Group 2
+                HealthPermission.getReadPermission(HeightRecord::class),
+                HealthPermission.getReadPermission(BodyFatRecord::class),
+                HealthPermission.getReadPermission(LeanBodyMassRecord::class),
+                HealthPermission.getReadPermission(BoneMassRecord::class)
             )
 
             Log.d(TAG, "Permisos otorgados: ${grantedPermissions.size}")
@@ -118,6 +127,11 @@ class AutoExportWorker(
         val totalCaloriesData = readTotalCaloriesRecords(healthConnectManager, startTime, endTime)
         val restingHRData = readRestingHeartRateRecords(healthConnectManager, startTime, endTime)
         val oxygenSatData = readOxygenSaturationRecords(healthConnectManager, startTime, endTime)
+        // v1.8.0 - Body Measurements Group 2
+        val heightData = readHeightRecords(healthConnectManager, startTime, endTime)
+        val bodyFatData = readBodyFatRecords(healthConnectManager, startTime, endTime)
+        val leanBodyMassData = readLeanBodyMassRecords(healthConnectManager, startTime, endTime)
+        val boneMassData = readBoneMassRecords(healthConnectManager, startTime, endTime)
 
         val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"))
         val fileName = "health_data_AUTO_FULL_${timestamp}.json"
@@ -130,6 +144,10 @@ class AutoExportWorker(
             totalCaloriesData,
             restingHRData,
             oxygenSatData,
+            heightData,
+            bodyFatData,
+            leanBodyMassData,
+            boneMassData,
             "AUTO_FULL_EXPORT"
         )
 
@@ -146,13 +164,17 @@ class AutoExportWorker(
                     DistanceRecord::class,
                     TotalCaloriesBurnedRecord::class,
                     RestingHeartRateRecord::class,
-                    OxygenSaturationRecord::class
+                    OxygenSaturationRecord::class,
+                    HeightRecord::class,
+                    BodyFatRecord::class,
+                    LeanBodyMassRecord::class,
+                    BoneMassRecord::class
                 )
             )
         )
         tokenManager.saveChangesToken(token)
 
-        Log.d(TAG, "✅ Export completo: ${weightData.size} weight + ${exerciseData.size} exercises + ${vo2maxData.size} VO2Max + ${stepsData.size} steps + ${distanceData.size} distance + ${totalCaloriesData.size} calories + ${restingHRData.size} RHR + ${oxygenSatData.size} SpO2")
+        Log.d(TAG, "✅ Export completo: ${weightData.size}peso +${exerciseData.size}ej +${vo2maxData.size}VO2 +${stepsData.size}pasos +${distanceData.size}dist +${totalCaloriesData.size}cal +${restingHRData.size}RHR +${oxygenSatData.size}SpO2 +${heightData.size}altura +${bodyFatData.size}grasa +${leanBodyMassData.size}magra +${boneMassData.size}hueso")
         Log.d(TAG, "Token guardado para próximos exports incrementales")
     }
 
@@ -179,6 +201,11 @@ class AutoExportWorker(
         val totalCaloriesChanges = mutableListOf<Map<String, Any?>>()
         val restingHRChanges = mutableListOf<Map<String, Any?>>()
         val oxygenSatChanges = mutableListOf<Map<String, Any?>>()
+        // v1.8.0 - Body Measurements Group 2
+        val heightChanges = mutableListOf<Map<String, Any?>>()
+        val bodyFatChanges = mutableListOf<Map<String, Any?>>()
+        val leanBodyMassChanges = mutableListOf<Map<String, Any?>>()
+        val boneMassChanges = mutableListOf<Map<String, Any?>>()
         val deletions = mutableListOf<String>()
 
         changesResponse.changes.forEach { change ->
@@ -253,6 +280,43 @@ class AutoExportWorker(
                             ))
                             Log.d(TAG, "  + Oxygen Saturation change detected")
                         }
+                        // v1.8.0 - Body Measurements Group 2
+                        is HeightRecord -> {
+                            heightChanges.add(mapOf(
+                                "timestamp" to record.time.toString(),
+                                "height_meters" to record.height.inMeters,
+                                "source" to record.metadata.dataOrigin.packageName,
+                                "change_type" to "UPSERT"
+                            ))
+                            Log.d(TAG, "  + Height change detected")
+                        }
+                        is BodyFatRecord -> {
+                            bodyFatChanges.add(mapOf(
+                                "timestamp" to record.time.toString(),
+                                "percentage" to record.percentage.value,
+                                "source" to record.metadata.dataOrigin.packageName,
+                                "change_type" to "UPSERT"
+                            ))
+                            Log.d(TAG, "  + Body Fat change detected")
+                        }
+                        is LeanBodyMassRecord -> {
+                            leanBodyMassChanges.add(mapOf(
+                                "timestamp" to record.time.toString(),
+                                "mass_kg" to record.mass.inKilograms,
+                                "source" to record.metadata.dataOrigin.packageName,
+                                "change_type" to "UPSERT"
+                            ))
+                            Log.d(TAG, "  + Lean Body Mass change detected")
+                        }
+                        is BoneMassRecord -> {
+                            boneMassChanges.add(mapOf(
+                                "timestamp" to record.time.toString(),
+                                "mass_kg" to record.mass.inKilograms,
+                                "source" to record.metadata.dataOrigin.packageName,
+                                "change_type" to "UPSERT"
+                            ))
+                            Log.d(TAG, "  + Bone Mass change detected")
+                        }
                         is ExerciseSessionRecord -> {
                             val durationMinutes = try {
                                 java.time.Duration.between(record.startTime, record.endTime).toMinutes()
@@ -325,7 +389,8 @@ class AutoExportWorker(
         if (weightChanges.isEmpty() && exerciseChanges.isEmpty() && sleepChanges.isEmpty() &&
             vo2maxChanges.isEmpty() && stepsChanges.isEmpty() && distanceChanges.isEmpty() &&
             totalCaloriesChanges.isEmpty() && restingHRChanges.isEmpty() && oxygenSatChanges.isEmpty() &&
-            deletions.isEmpty()) {
+            heightChanges.isEmpty() && bodyFatChanges.isEmpty() && leanBodyMassChanges.isEmpty() &&
+            boneMassChanges.isEmpty() && deletions.isEmpty()) {
             Log.d(TAG, "ℹ️ No hay cambios desde último export")
             tokenManager.saveChangesToken(changesResponse.nextChangesToken)
             return
@@ -343,13 +408,17 @@ class AutoExportWorker(
             totalCaloriesChanges,
             restingHRChanges,
             oxygenSatChanges,
+            heightChanges,
+            bodyFatChanges,
+            leanBodyMassChanges,
+            boneMassChanges,
             deletions
         )
 
         saveToDownloads(fileName, jsonContent)
         tokenManager.saveChangesToken(changesResponse.nextChangesToken)
 
-        Log.d(TAG, "✅ Export diferencial: ${weightChanges.size} weight + ${exerciseChanges.size} exercises + ${sleepChanges.size} sleep + ${vo2maxChanges.size} VO2Max + ${stepsChanges.size} steps + ${distanceChanges.size} distance + ${totalCaloriesChanges.size} calories + ${restingHRChanges.size} RHR + ${oxygenSatChanges.size} SpO2 + ${deletions.size} deletions")
+        Log.d(TAG, "✅ Export diferencial: ${weightChanges.size}peso +${exerciseChanges.size}ej +${sleepChanges.size}sueño +${vo2maxChanges.size}VO2 +${stepsChanges.size}pasos +${distanceChanges.size}dist +${totalCaloriesChanges.size}cal +${restingHRChanges.size}RHR +${oxygenSatChanges.size}SpO2 +${heightChanges.size}altura +${bodyFatChanges.size}grasa +${leanBodyMassChanges.size}magra +${boneMassChanges.size}hueso +${deletions.size}del")
     }
 
     private fun saveToDownloads(fileName: String, content: String) {
@@ -477,7 +546,7 @@ class AutoExportWorker(
         }
     }
 
-    // v1.7.0 - NUEVAS FUNCIONES PARA 5 MÉTRICAS ESENCIALES
+    // v1.7.0 - FUNCIONES PARA 5 MÉTRICAS ESENCIALES
 
     private suspend fun readStepsRecords(
         healthConnectManager: HealthConnectManager,
@@ -587,6 +656,92 @@ class AutoExportWorker(
         }
     }
 
+    // v1.8.0 - FUNCIONES PARA BODY MEASUREMENTS GROUP 2
+
+    private suspend fun readHeightRecords(
+        healthConnectManager: HealthConnectManager,
+        startTime: Instant,
+        endTime: Instant
+    ): List<Map<String, Any?>> {
+        return try {
+            val records = healthConnectManager.readHeightRecords(startTime, endTime)
+
+            records.map { record ->
+                mapOf(
+                    "timestamp" to record.time.atZone(record.zoneOffset ?: ZoneId.systemDefault()).toString(),
+                    "height_meters" to record.height.inMeters,
+                    "source" to record.metadata.dataOrigin.packageName
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reading Height records", e)
+            emptyList()
+        }
+    }
+
+    private suspend fun readBodyFatRecords(
+        healthConnectManager: HealthConnectManager,
+        startTime: Instant,
+        endTime: Instant
+    ): List<Map<String, Any?>> {
+        return try {
+            val records = healthConnectManager.readBodyFatRecords(startTime, endTime)
+
+            records.map { record ->
+                mapOf(
+                    "timestamp" to record.time.atZone(record.zoneOffset ?: ZoneId.systemDefault()).toString(),
+                    "percentage" to record.percentage.value,
+                    "source" to record.metadata.dataOrigin.packageName
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reading Body Fat records", e)
+            emptyList()
+        }
+    }
+
+    private suspend fun readLeanBodyMassRecords(
+        healthConnectManager: HealthConnectManager,
+        startTime: Instant,
+        endTime: Instant
+    ): List<Map<String, Any?>> {
+        return try {
+            val records = healthConnectManager.readLeanBodyMassRecords(startTime, endTime)
+
+            records.map { record ->
+                mapOf(
+                    "timestamp" to record.time.atZone(record.zoneOffset ?: ZoneId.systemDefault()).toString(),
+                    "mass_kg" to record.mass.inKilograms,
+                    "source" to record.metadata.dataOrigin.packageName
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reading Lean Body Mass records", e)
+            emptyList()
+        }
+    }
+
+    private suspend fun readBoneMassRecords(
+        healthConnectManager: HealthConnectManager,
+        startTime: Instant,
+        endTime: Instant
+    ): List<Map<String, Any?>> {
+        return try {
+            val records = healthConnectManager.readBoneMassRecords(startTime, endTime)
+
+            records.map { record ->
+                mapOf(
+                    "timestamp" to record.time.atZone(record.zoneOffset ?: ZoneId.systemDefault()).toString(),
+                    "mass_kg" to record.mass.inKilograms,
+                    "source" to record.metadata.dataOrigin.packageName
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reading Bone Mass records", e)
+            emptyList()
+        }
+    }
+
     private fun getMeasurementMethodName(method: Int): String {
         return when (method) {
             Vo2MaxRecord.MEASUREMENT_METHOD_OTHER -> "Other"
@@ -608,6 +763,10 @@ class AutoExportWorker(
         totalCaloriesData: List<Map<String, Any?>>,
         restingHRData: List<Map<String, Any?>>,
         oxygenSatData: List<Map<String, Any?>>,
+        heightData: List<Map<String, Any?>>,
+        bodyFatData: List<Map<String, Any?>>,
+        leanBodyMassData: List<Map<String, Any?>>,
+        boneMassData: List<Map<String, Any?>>,
         exportType: String
     ): String {
         return buildString {
@@ -660,6 +819,27 @@ class AutoExportWorker(
             append("  \"oxygen_saturation_records\": {\n")
             append("    \"count\": ${oxygenSatData.size},\n")
             append("    \"data\": ${serializeMapList(oxygenSatData)}\n")
+            append("  },\n")
+
+            // v1.8.0 - Body Measurements Group 2
+            append("  \"height_records\": {\n")
+            append("    \"count\": ${heightData.size},\n")
+            append("    \"data\": ${serializeMapList(heightData)}\n")
+            append("  },\n")
+
+            append("  \"body_fat_records\": {\n")
+            append("    \"count\": ${bodyFatData.size},\n")
+            append("    \"data\": ${serializeMapList(bodyFatData)}\n")
+            append("  },\n")
+
+            append("  \"lean_body_mass_records\": {\n")
+            append("    \"count\": ${leanBodyMassData.size},\n")
+            append("    \"data\": ${serializeMapList(leanBodyMassData)}\n")
+            append("  },\n")
+
+            append("  \"bone_mass_records\": {\n")
+            append("    \"count\": ${boneMassData.size},\n")
+            append("    \"data\": ${serializeMapList(boneMassData)}\n")
             append("  }\n")
             append("}")
         }
@@ -675,6 +855,10 @@ class AutoExportWorker(
         totalCaloriesChanges: List<Map<String, Any?>>,
         restingHRChanges: List<Map<String, Any?>>,
         oxygenSatChanges: List<Map<String, Any?>>,
+        heightChanges: List<Map<String, Any?>>,
+        bodyFatChanges: List<Map<String, Any?>>,
+        leanBodyMassChanges: List<Map<String, Any?>>,
+        boneMassChanges: List<Map<String, Any?>>,
         deletions: List<String>
     ): String {
         return buildString {
@@ -734,6 +918,27 @@ class AutoExportWorker(
             append("  \"oxygen_saturation_changes\": {\n")
             append("    \"count\": ${oxygenSatChanges.size},\n")
             append("    \"data\": ${serializeMapList(oxygenSatChanges)}\n")
+            append("  },\n")
+
+            // v1.8.0 - Body Measurements Group 2 changes
+            append("  \"height_changes\": {\n")
+            append("    \"count\": ${heightChanges.size},\n")
+            append("    \"data\": ${serializeMapList(heightChanges)}\n")
+            append("  },\n")
+
+            append("  \"body_fat_changes\": {\n")
+            append("    \"count\": ${bodyFatChanges.size},\n")
+            append("    \"data\": ${serializeMapList(bodyFatChanges)}\n")
+            append("  },\n")
+
+            append("  \"lean_body_mass_changes\": {\n")
+            append("    \"count\": ${leanBodyMassChanges.size},\n")
+            append("    \"data\": ${serializeMapList(leanBodyMassChanges)}\n")
+            append("  },\n")
+
+            append("  \"bone_mass_changes\": {\n")
+            append("    \"count\": ${boneMassChanges.size},\n")
+            append("    \"data\": ${serializeMapList(boneMassChanges)}\n")
             append("  },\n")
 
             // Deletions

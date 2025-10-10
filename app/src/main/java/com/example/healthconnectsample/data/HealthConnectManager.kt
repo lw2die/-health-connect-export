@@ -447,6 +447,56 @@ class HealthConnectManager(private val context: Context) {
         return response.records
     }
 
+    // v1.8.0 - NUEVAS FUNCIONES GRUPO 2: BODY MEASUREMENTS
+
+    /**
+     * Lee registros de altura en un rango de tiempo específico
+     */
+    suspend fun readHeightRecords(start: Instant, end: Instant): List<HeightRecord> {
+        val request = ReadRecordsRequest(
+            recordType = HeightRecord::class,
+            timeRangeFilter = TimeRangeFilter.between(start, end)
+        )
+        val response = healthConnectClient.readRecords(request)
+        return response.records
+    }
+
+    /**
+     * Lee registros de grasa corporal en un rango de tiempo específico
+     */
+    suspend fun readBodyFatRecords(start: Instant, end: Instant): List<BodyFatRecord> {
+        val request = ReadRecordsRequest(
+            recordType = BodyFatRecord::class,
+            timeRangeFilter = TimeRangeFilter.between(start, end)
+        )
+        val response = healthConnectClient.readRecords(request)
+        return response.records
+    }
+
+    /**
+     * Lee registros de masa corporal magra en un rango de tiempo específico
+     */
+    suspend fun readLeanBodyMassRecords(start: Instant, end: Instant): List<LeanBodyMassRecord> {
+        val request = ReadRecordsRequest(
+            recordType = LeanBodyMassRecord::class,
+            timeRangeFilter = TimeRangeFilter.between(start, end)
+        )
+        val response = healthConnectClient.readRecords(request)
+        return response.records
+    }
+
+    /**
+     * Lee registros de masa ósea en un rango de tiempo específico
+     */
+    suspend fun readBoneMassRecords(start: Instant, end: Instant): List<BoneMassRecord> {
+        val request = ReadRecordsRequest(
+            recordType = BoneMassRecord::class,
+            timeRangeFilter = TimeRangeFilter.between(start, end)
+        )
+        val response = healthConnectClient.readRecords(request)
+        return response.records
+    }
+
     suspend fun computeWeeklyAverage(start: Instant, end: Instant): Mass? {
         val request = AggregateRequest(
             metrics = setOf(WeightRecord.WEIGHT_AVG),
