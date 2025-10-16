@@ -112,7 +112,7 @@ class HealthConnectManager(private val context: Context) {
         var fallbackSteps: Long? = null; var fallbackDistance: Length? = null; var fallbackTotalCalories: Energy? = null
         var fallbackActiveCalories: Energy? = null; var fallbackAvgHeartRate: Long? = null; var fallbackMaxHeartRate: Long? = null; var fallbackMinHeartRate: Long? = null
         val needsFallback = aggregateData == null || aggregateData.dataOrigins.isEmpty()
-        
+
         if (needsFallback) {
             try { val sr = healthConnectClient.readRecords(ReadRecordsRequest(StepsRecord::class, timeRangeFilter)).records; if (sr.isNotEmpty()) fallbackSteps = sr.sumOf { it.count } } catch (e: Exception) { }
             try { val dr = healthConnectClient.readRecords(ReadRecordsRequest(DistanceRecord::class, timeRangeFilter)).records; if (dr.isNotEmpty()) fallbackDistance = Length.meters(dr.sumOf { it.distance.inMeters }) } catch (e: Exception) { }
@@ -229,6 +229,21 @@ class HealthConnectManager(private val context: Context) {
 
     suspend fun readBodyWaterMassRecords(start: Instant, end: Instant): List<BodyWaterMassRecord> {
         val request = ReadRecordsRequest(recordType = BodyWaterMassRecord::class, timeRangeFilter = TimeRangeFilter.between(start, end))
+        return healthConnectClient.readRecords(request).records
+    }
+
+    suspend fun readHeartRateRecords(start: Instant, end: Instant): List<HeartRateRecord> {
+        val request = ReadRecordsRequest(recordType = HeartRateRecord::class, timeRangeFilter = TimeRangeFilter.between(start, end))
+        return healthConnectClient.readRecords(request).records
+    }
+
+    suspend fun readBloodPressureRecords(start: Instant, end: Instant): List<BloodPressureRecord> {
+        val request = ReadRecordsRequest(recordType = BloodPressureRecord::class, timeRangeFilter = TimeRangeFilter.between(start, end))
+        return healthConnectClient.readRecords(request).records
+    }
+
+    suspend fun readBloodGlucoseRecords(start: Instant, end: Instant): List<BloodGlucoseRecord> {
+        val request = ReadRecordsRequest(recordType = BloodGlucoseRecord::class, timeRangeFilter = TimeRangeFilter.between(start, end))
         return healthConnectClient.readRecords(request).records
     }
 
