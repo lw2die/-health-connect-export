@@ -368,6 +368,59 @@ fun WelcomeScreen(
                     )
                 }
 
+                // v2.1.0 - HEART RATE DATA
+                val allHeartRateRecords = healthConnectManager.readHeartRateRecords(startTime, endTime)
+                val samsungHeartRate = allHeartRateRecords.filter {
+                    it.metadata.dataOrigin.packageName == "com.sec.android.app.shealth"
+                }
+
+                val heartRateData = samsungHeartRate.map { record ->
+                    val bpms = record.samples.map { it.beatsPerMinute }
+                    mapOf(
+                        "start_time" to record.startTime.atZone(record.startZoneOffset ?: ZoneId.systemDefault()).toString(),
+                        "end_time" to record.endTime.atZone(record.endZoneOffset ?: ZoneId.systemDefault()).toString(),
+                        "samples_count" to record.samples.size,
+                        "avg_bpm" to if (bpms.isNotEmpty()) bpms.average().toLong() else null,
+                        "min_bpm" to if (bpms.isNotEmpty()) bpms.minOrNull() else null,
+                        "max_bpm" to if (bpms.isNotEmpty()) bpms.maxOrNull() else null,
+                        "source" to record.metadata.dataOrigin.packageName
+                    )
+                }
+
+                // v2.1.0 - BLOOD PRESSURE DATA
+                val allBloodPressureRecords = healthConnectManager.readBloodPressureRecords(startTime, endTime)
+                val samsungBloodPressure = allBloodPressureRecords.filter {
+                    it.metadata.dataOrigin.packageName == "com.sec.android.app.shealth"
+                }
+
+                val bloodPressureData = samsungBloodPressure.map { record ->
+                    mapOf(
+                        "timestamp" to record.time.atZone(record.zoneOffset ?: ZoneId.systemDefault()).toString(),
+                        "systolic_mmhg" to record.systolic.inMillimetersOfMercury,
+                        "diastolic_mmhg" to record.diastolic.inMillimetersOfMercury,
+                        "source" to record.metadata.dataOrigin.packageName
+                    )
+                }
+
+                // v2.1.0 - BLOOD GLUCOSE DATA (REPARADO)
+                val allBloodGlucoseRecords = healthConnectManager.readBloodGlucoseRecords(startTime, endTime)
+                val samsungBloodGlucose = allBloodGlucoseRecords.filter {
+                    it.metadata.dataOrigin.packageName == "com.sec.android.app.shealth"
+                }
+
+                val bloodGlucoseData = samsungBloodGlucose.mapNotNull { record ->
+                    try {
+                        mapOf(
+                            "timestamp" to record.time.atZone(record.zoneOffset ?: ZoneId.systemDefault()).toString(),
+                            "glucose_mmol_per_l" to record.level.inMillimolesPerLiter,
+                            "specimen_source" to record.specimenSource,
+                            "source" to record.metadata.dataOrigin.packageName
+                        )
+                    } catch (e: Exception) {
+                        null
+                    }
+                }
+
                 val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm"))
                 val fileName = "health_data_SAMSUNG_MANUAL_${timestamp}.json"
 
@@ -435,6 +488,18 @@ fun WelcomeScreen(
                     append("  \"body_water_mass_records\": {\n")
                     append("    \"count\": ${bodyWaterMassData.size},\n")
                     append("    \"data\": ${serializeList(bodyWaterMassData)}\n")
+                    append("  },\n")
+                    append("  \"heart_rate_records\": {\n")
+                    append("    \"count\": ${heartRateData.size},\n")
+                    append("    \"data\": ${serializeList(heartRateData)}\n")
+                    append("  },\n")
+                    append("  \"blood_pressure_records\": {\n")
+                    append("    \"count\": ${bloodPressureData.size},\n")
+                    append("    \"data\": ${serializeList(bloodPressureData)}\n")
+                    append("  },\n")
+                    append("  \"blood_glucose_records\": {\n")
+                    append("    \"count\": ${bloodGlucoseData.size},\n")
+                    append("    \"data\": ${serializeList(bloodGlucoseData)}\n")
                     append("  }\n")
                     append("}")
                 }
@@ -459,7 +524,7 @@ fun WelcomeScreen(
 
                 Toast.makeText(
                     context,
-                    "Export: ${weightData.size}peso +${exerciseData.size}ej +${sleepData.size}sueño +${vo2MaxData.size}VO2 +${stepsData.size}pasos +${distanceData.size}dist +${totalCaloriesData.size}cal +${restingHRData.size}RHR +${oxygenSatData.size}SpO2 +${heightData.size}altura +${bodyFatData.size}grasa +${leanBodyMassData.size}magra +${boneMassData.size}hueso +${basalMetabolicRateData.size}BMR +${bodyWaterMassData.size}agua",
+                    "Export: ${weightData.size}peso +${exerciseData.size}ej +${sleepData.size}sueño +${vo2MaxData.size}VO2 +${stepsData.size}pasos +${distanceData.size}dist +${totalCaloriesData.size}cal +${restingHRData.size}RHR +${oxygenSatData.size}SpO2 +${heightData.size}altura +${bodyFatData.size}grasa +${leanBodyMassData.size}magra +${boneMassData.size}hueso +${basalMetabolicRateData.size}BMR +${bodyWaterMassData.size}agua +${heartRateData.size}HR +${bloodPressureData.size}BP +${bloodGlucoseData.size}BG",
                     Toast.LENGTH_LONG
                 ).show()
 

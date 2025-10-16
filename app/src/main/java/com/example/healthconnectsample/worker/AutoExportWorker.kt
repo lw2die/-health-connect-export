@@ -22,6 +22,9 @@ import androidx.health.connect.client.records.LeanBodyMassRecord
 import androidx.health.connect.client.records.BoneMassRecord
 import androidx.health.connect.client.records.BasalMetabolicRateRecord
 import androidx.health.connect.client.records.BodyWaterMassRecord
+import androidx.health.connect.client.records.HeartRateRecord
+import androidx.health.connect.client.records.BloodPressureRecord
+import androidx.health.connect.client.records.BloodGlucoseRecord
 import androidx.health.connect.client.request.ChangesTokenRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
@@ -81,7 +84,10 @@ class AutoExportWorker(
                 HealthPermission.getReadPermission(LeanBodyMassRecord::class),
                 HealthPermission.getReadPermission(BoneMassRecord::class),
                 HealthPermission.getReadPermission(BasalMetabolicRateRecord::class),
-                HealthPermission.getReadPermission(BodyWaterMassRecord::class)
+                HealthPermission.getReadPermission(BodyWaterMassRecord::class),
+                HealthPermission.getReadPermission(HeartRateRecord::class),
+                HealthPermission.getReadPermission(BloodPressureRecord::class),
+                HealthPermission.getReadPermission(BloodGlucoseRecord::class)
             )
 
             Log.d(TAG, "Permisos otorgados: ${grantedPermissions.size}")
@@ -135,6 +141,9 @@ class AutoExportWorker(
         val boneMassData = readBoneMassRecords(healthConnectManager, startTime, endTime)
         val basalMetabolicRateData = readBasalMetabolicRateRecords(healthConnectManager, startTime, endTime)
         val bodyWaterMassData = readBodyWaterMassRecords(healthConnectManager, startTime, endTime)
+        val heartRateData = readHeartRateRecords(healthConnectManager, startTime, endTime)
+        val bloodPressureData = readBloodPressureRecords(healthConnectManager, startTime, endTime)
+        val bloodGlucoseData = readBloodGlucoseRecords(healthConnectManager, startTime, endTime)
 
         val jsonContent = generateHealthJSON(
             weightData,
@@ -152,6 +161,9 @@ class AutoExportWorker(
             boneMassData,
             basalMetabolicRateData,
             bodyWaterMassData,
+            heartRateData,
+            bloodPressureData,
+            bloodGlucoseData,
             "AUTO_FULL_EXPORT"
         )
 
@@ -174,13 +186,16 @@ class AutoExportWorker(
                     LeanBodyMassRecord::class,
                     BoneMassRecord::class,
                     BasalMetabolicRateRecord::class,
-                    BodyWaterMassRecord::class
+                    BodyWaterMassRecord::class,
+                    HeartRateRecord::class,
+                    BloodPressureRecord::class,
+                    BloodGlucoseRecord::class
                 )
             )
         )
         tokenManager.saveToken(newToken)
 
-        Log.d(TAG, "✅ Export completo: ${weightData.size}peso +${exerciseData.size}ej +${sleepData.size}sueño +${vo2MaxData.size}VO2 +${stepsData.size}pasos +${distanceData.size}dist +${totalCaloriesData.size}cal +${restingHRData.size}RHR +${oxygenSatData.size}SpO2 +${heightData.size}altura +${bodyFatData.size}grasa +${leanBodyMassData.size}magra +${boneMassData.size}hueso +${basalMetabolicRateData.size}BMR +${bodyWaterMassData.size}agua")
+        Log.d(TAG, "✅ Export completo: ${weightData.size}peso +${exerciseData.size}ej +${sleepData.size}sueño +${vo2MaxData.size}VO2 +${stepsData.size}pasos +${distanceData.size}dist +${totalCaloriesData.size}cal +${restingHRData.size}RHR +${oxygenSatData.size}SpO2 +${heightData.size}altura +${bodyFatData.size}grasa +${leanBodyMassData.size}magra +${boneMassData.size}hueso +${basalMetabolicRateData.size}BMR +${bodyWaterMassData.size}agua +${heartRateData.size}HR +${bloodPressureData.size}BP +${bloodGlucoseData.size}BG")
         Log.d(TAG, "✅ Nuevo token guardado")
     }
 
@@ -211,6 +226,9 @@ class AutoExportWorker(
         val boneMassChanges = mutableListOf<Map<String, Any?>>()
         val basalMetabolicRateChanges = mutableListOf<Map<String, Any?>>()
         val bodyWaterMassChanges = mutableListOf<Map<String, Any?>>()
+        val heartRateChanges = mutableListOf<Map<String, Any?>>()
+        val bloodPressureChanges = mutableListOf<Map<String, Any?>>()
+        val bloodGlucoseChanges = mutableListOf<Map<String, Any?>>()
         val deletions = mutableListOf<String>()
 
         try {
@@ -386,6 +404,55 @@ class AutoExportWorker(
                                 ))
                                 Log.d(TAG, "  + Body Water Mass change detected")
                             }
+                            is HeartRateRecord -> {
+                                val bpms = record.samples.map { it.beatsPerMinute }
+                                heartRateChanges.add(mapOf(
+                                    "start_time" to record.startTime.toString(),
+                                    "end_time" to record.endTime.toString(),
+                                    "samples_count" to record.samples.size,
+                                    "avg_bpm" to if (bpms.isNotEmpty()) bpms.average().toLong() else null,
+                                    "min_bpm" to if (bpms.isNotEmpty()) bpms.minOrNull() else null,
+                                    "max_bpm" to if (bpms.isNotEmpty()) bpms.maxOrNull() else null,
+                                    "source" to record.metadata.dataOrigin.packageName,
+                                    "change_type" to "UPSERT"
+                                ))
+                                Log.d(TAG, "  + Heart Rate change detected")
+                            }
+                            is BloodPressureRecord -> {
+                                bloodPressureChanges.add(mapOf(
+                                    "timestamp" to record.time.toString(),
+                                    "systolic_mmhg" to record.systolic.inMillimetersOfMercury,
+                                    "diastolic_mmhg" to record.diastolic.inMillimetersOfMercury,
+                                    "source" to record.metadata.dataOrigin.packageName,
+                                    "change_type" to "UPSERT"
+                                ))
+                                Log.d(TAG, "  + Blood Pressure change detected")
+                            }
+                            is BloodGlucoseRecord -> {
+                                try {
+                                    val glucoseValue = record.level.inMillimolesPerLiter
+                                    Log.d(TAG, "✅ Glucosa capturada: $glucoseValue mmol/L")
+                                    bloodGlucoseChanges.add(mapOf(
+                                        "timestamp" to record.time.toString(),
+                                        "glucose_mmol_per_l" to glucoseValue,
+                                        "specimen_source" to record.specimenSource,
+                                        "source" to record.metadata.dataOrigin.packageName,
+                                        "change_type" to "UPSERT"
+                                    ))
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "❌ Error al leer glucosa: ${e.javaClass.simpleName} - ${e.message}")
+                                    Log.e(TAG, "Stacktrace: ${e.stackTraceToString()}")
+                                    // Intenta guardar sin el valor
+                                    bloodGlucoseChanges.add(mapOf(
+                                        "timestamp" to record.time.toString(),
+                                        "error_reading_glucose" to e.message,
+                                        "specimen_source" to record.specimenSource,
+                                        "source" to record.metadata.dataOrigin.packageName,
+                                        "change_type" to "UPSERT"
+                                    ))
+                                }
+                                Log.d(TAG, "  + Blood Glucose change detected")
+                            }
                         }
                     }
                     is DeletionChange -> {
@@ -399,7 +466,8 @@ class AutoExportWorker(
                 vo2maxChanges.isEmpty() && stepsChanges.isEmpty() && distanceChanges.isEmpty() &&
                 totalCaloriesChanges.isEmpty() && restingHRChanges.isEmpty() && oxygenSatChanges.isEmpty() &&
                 heightChanges.isEmpty() && bodyFatChanges.isEmpty() && leanBodyMassChanges.isEmpty() &&
-                boneMassChanges.isEmpty() && basalMetabolicRateChanges.isEmpty() && bodyWaterMassChanges.isEmpty() && deletions.isEmpty()) {
+                boneMassChanges.isEmpty() && basalMetabolicRateChanges.isEmpty() && bodyWaterMassChanges.isEmpty() &&
+                heartRateChanges.isEmpty() && bloodPressureChanges.isEmpty() && bloodGlucoseChanges.isEmpty() && deletions.isEmpty()) {
                 Log.d(TAG, "📭 No hay cambios nuevos")
                 return
             }
@@ -420,6 +488,9 @@ class AutoExportWorker(
                 boneMassChanges,
                 basalMetabolicRateChanges,
                 bodyWaterMassChanges,
+                heartRateChanges,
+                bloodPressureChanges,
+                bloodGlucoseChanges,
                 deletions
             )
 
@@ -428,7 +499,7 @@ class AutoExportWorker(
             val newToken = changesResponse.nextChangesToken
             tokenManager.saveToken(newToken)
 
-            Log.d(TAG, "✅ Export diferencial: ${weightChanges.size}peso +${exerciseChanges.size}ej +${sleepChanges.size}sueño +${vo2maxChanges.size}VO2 +${stepsChanges.size}pasos +${distanceChanges.size}dist +${totalCaloriesChanges.size}cal +${restingHRChanges.size}RHR +${oxygenSatChanges.size}SpO2 +${heightChanges.size}altura +${bodyFatChanges.size}grasa +${leanBodyMassChanges.size}magra +${boneMassChanges.size}hueso +${basalMetabolicRateChanges.size}BMR +${bodyWaterMassChanges.size}agua +${deletions.size}del")
+            Log.d(TAG, "✅ Export diferencial: ${weightChanges.size}peso +${exerciseChanges.size}ej +${sleepChanges.size}sueño +${vo2maxChanges.size}VO2 +${stepsChanges.size}pasos +${distanceChanges.size}dist +${totalCaloriesChanges.size}cal +${restingHRChanges.size}RHR +${oxygenSatChanges.size}SpO2 +${heightChanges.size}altura +${bodyFatChanges.size}grasa +${leanBodyMassChanges.size}magra +${boneMassChanges.size}hueso +${basalMetabolicRateChanges.size}BMR +${bodyWaterMassChanges.size}agua +${heartRateChanges.size}HR +${bloodPressureChanges.size}BP +${bloodGlucoseChanges.size}BG +${deletions.size}del")
             Log.d(TAG, "✅ Token actualizado")
 
         } catch (e: Exception) {
@@ -767,6 +838,73 @@ class AutoExportWorker(
         }
     }
 
+    private suspend fun readHeartRateRecords(
+        healthConnectManager: HealthConnectManager,
+        startTime: Instant,
+        endTime: Instant
+    ): List<Map<String, Any?>> {
+        return try {
+            val records = healthConnectManager.readHeartRateRecords(startTime, endTime)
+            records.map { record ->
+                val bpms = record.samples.map { it.beatsPerMinute }
+                mapOf(
+                    "start_time" to record.startTime.atZone(record.startZoneOffset ?: ZoneId.systemDefault()).toString(),
+                    "end_time" to record.endTime.atZone(record.endZoneOffset ?: ZoneId.systemDefault()).toString(),
+                    "samples_count" to record.samples.size,
+                    "avg_bpm" to if (bpms.isNotEmpty()) bpms.average().toLong() else null,
+                    "min_bpm" to if (bpms.isNotEmpty()) bpms.minOrNull() else null,
+                    "max_bpm" to if (bpms.isNotEmpty()) bpms.maxOrNull() else null,
+                    "source" to record.metadata.dataOrigin.packageName
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reading heart rate records", e)
+            emptyList()
+        }
+    }
+
+    private suspend fun readBloodPressureRecords(
+        healthConnectManager: HealthConnectManager,
+        startTime: Instant,
+        endTime: Instant
+    ): List<Map<String, Any?>> {
+        return try {
+            val records = healthConnectManager.readBloodPressureRecords(startTime, endTime)
+            records.map { record ->
+                mapOf(
+                    "timestamp" to record.time.atZone(record.zoneOffset ?: ZoneId.systemDefault()).toString(),
+                    "systolic_mmhg" to record.systolic.inMillimetersOfMercury,
+                    "diastolic_mmhg" to record.diastolic.inMillimetersOfMercury,
+                    "source" to record.metadata.dataOrigin.packageName
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reading blood pressure records", e)
+            emptyList()
+        }
+    }
+
+    private suspend fun readBloodGlucoseRecords(
+        healthConnectManager: HealthConnectManager,
+        startTime: Instant,
+        endTime: Instant
+    ): List<Map<String, Any?>> {
+        return try {
+            val records = healthConnectManager.readBloodGlucoseRecords(startTime, endTime)
+            records.map { record ->
+                mapOf(
+                    "timestamp" to record.time.atZone(record.zoneOffset ?: ZoneId.systemDefault()).toString(),
+                    "glucose_mmol_per_l" to record.level.inMillimolesPerLiter,
+                    "specimen_source" to record.specimenSource,
+                    "source" to record.metadata.dataOrigin.packageName
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reading blood glucose records", e)
+            emptyList()
+        }
+    }
+
     private fun generateHealthJSON(
         weightData: List<Map<String, Any?>>,
         exerciseData: List<Map<String, Any?>>,
@@ -783,6 +921,9 @@ class AutoExportWorker(
         boneMassData: List<Map<String, Any?>>,
         basalMetabolicRateData: List<Map<String, Any?>>,
         bodyWaterMassData: List<Map<String, Any?>>,
+        heartRateData: List<Map<String, Any?>>,
+        bloodPressureData: List<Map<String, Any?>>,
+        bloodGlucoseData: List<Map<String, Any?>>,
         exportType: String
     ): String {
         return buildString {
@@ -849,6 +990,18 @@ class AutoExportWorker(
             append("  \"body_water_mass_records\": {\n")
             append("    \"count\": ${bodyWaterMassData.size},\n")
             append("    \"data\": ${serializeMapList(bodyWaterMassData)}\n")
+            append("  },\n")
+            append("  \"heart_rate_records\": {\n")
+            append("    \"count\": ${heartRateData.size},\n")
+            append("    \"data\": ${serializeMapList(heartRateData)}\n")
+            append("  },\n")
+            append("  \"blood_pressure_records\": {\n")
+            append("    \"count\": ${bloodPressureData.size},\n")
+            append("    \"data\": ${serializeMapList(bloodPressureData)}\n")
+            append("  },\n")
+            append("  \"blood_glucose_records\": {\n")
+            append("    \"count\": ${bloodGlucoseData.size},\n")
+            append("    \"data\": ${serializeMapList(bloodGlucoseData)}\n")
             append("  }\n")
             append("}")
         }
@@ -870,6 +1023,9 @@ class AutoExportWorker(
         boneMassChanges: List<Map<String, Any?>>,
         basalMetabolicRateChanges: List<Map<String, Any?>>,
         bodyWaterMassChanges: List<Map<String, Any?>>,
+        heartRateChanges: List<Map<String, Any?>>,
+        bloodPressureChanges: List<Map<String, Any?>>,
+        bloodGlucoseChanges: List<Map<String, Any?>>,
         deletions: List<String>
     ): String {
         return buildString {
@@ -936,6 +1092,18 @@ class AutoExportWorker(
             append("  \"body_water_mass_changes\": {\n")
             append("    \"count\": ${bodyWaterMassChanges.size},\n")
             append("    \"data\": ${serializeMapList(bodyWaterMassChanges)}\n")
+            append("  },\n")
+            append("  \"heart_rate_changes\": {\n")
+            append("    \"count\": ${heartRateChanges.size},\n")
+            append("    \"data\": ${serializeMapList(heartRateChanges)}\n")
+            append("  },\n")
+            append("  \"blood_pressure_changes\": {\n")
+            append("    \"count\": ${bloodPressureChanges.size},\n")
+            append("    \"data\": ${serializeMapList(bloodPressureChanges)}\n")
+            append("  },\n")
+            append("  \"blood_glucose_changes\": {\n")
+            append("    \"count\": ${bloodGlucoseChanges.size},\n")
+            append("    \"data\": ${serializeMapList(bloodGlucoseChanges)}\n")
             append("  },\n")
             append("  \"deletions\": {\n")
             append("    \"count\": ${deletions.size},\n")
