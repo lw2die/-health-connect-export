@@ -3,8 +3,6 @@
      */
 package com.example.healthconnectsample.data
 
-import androidx.health.connect.client.records.NutritionRecord
-import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -249,6 +247,11 @@ class HealthConnectManager(private val context: Context) {
         return healthConnectClient.readRecords(request).records
     }
 
+    suspend fun readNutritionRecords(start: Instant, end: Instant): List<NutritionRecord> {
+        val request = ReadRecordsRequest(recordType = NutritionRecord::class, timeRangeFilter = TimeRangeFilter.between(start, end))
+        return healthConnectClient.readRecords(request).records
+    }
+
     suspend fun computeWeeklyAverage(start: Instant, end: Instant): Mass? {
         val request = AggregateRequest(metrics = setOf(WeightRecord.WEIGHT_AVG), timeRangeFilter = TimeRangeFilter.between(start, end))
         return healthConnectClient.aggregate(request)[WeightRecord.WEIGHT_AVG]
@@ -318,15 +321,5 @@ class HealthConnectManager(private val context: Context) {
     sealed class ChangesMessage {
         data class NoMoreChanges(val nextChangesToken: String) : ChangesMessage()
         data class ChangeList(val changes: List<Change>) : ChangesMessage()
-    }
-
-    suspend fun readNutritionRecords(start: Instant, end: Instant): List<NutritionRecord> {
-        val request = ReadRecordsRequest(recordType = NutritionRecord::class, timeRangeFilter = TimeRangeFilter.between(start, end))
-        return healthConnectClient.readRecords(request).records
-    }
-
-    suspend fun readActiveCaloriesBurnedRecords(start: Instant, end: Instant): List<ActiveCaloriesBurnedRecord> {
-        val request = ReadRecordsRequest(recordType = ActiveCaloriesBurnedRecord::class, timeRangeFilter = TimeRangeFilter.between(start, end))
-        return healthConnectClient.readRecords(request).records
     }
 }

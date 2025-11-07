@@ -33,6 +33,18 @@ import androidx.health.connect.client.records.SpeedRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
 import androidx.health.connect.client.records.WeightRecord
+import androidx.health.connect.client.records.NutritionRecord
+import androidx.health.connect.client.records.Vo2MaxRecord
+import androidx.health.connect.client.records.RestingHeartRateRecord
+import androidx.health.connect.client.records.OxygenSaturationRecord
+import androidx.health.connect.client.records.HeightRecord
+import androidx.health.connect.client.records.BodyFatRecord
+import androidx.health.connect.client.records.LeanBodyMassRecord
+import androidx.health.connect.client.records.BoneMassRecord
+import androidx.health.connect.client.records.BasalMetabolicRateRecord
+import androidx.health.connect.client.records.BodyWaterMassRecord
+import androidx.health.connect.client.records.BloodPressureRecord
+import androidx.health.connect.client.records.BloodGlucoseRecord
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -52,7 +64,19 @@ class DifferentialChangesViewModel(private val healthConnectManager: HealthConne
         TotalCaloriesBurnedRecord::class,
         HeartRateRecord::class,
         SleepSessionRecord::class,
-        WeightRecord::class
+        WeightRecord::class,
+        NutritionRecord::class,
+        Vo2MaxRecord::class,
+        RestingHeartRateRecord::class,
+        OxygenSaturationRecord::class,
+        HeightRecord::class,
+        BodyFatRecord::class,
+        LeanBodyMassRecord::class,
+        BoneMassRecord::class,
+        BasalMetabolicRateRecord::class,
+        BodyWaterMassRecord::class,
+        BloodPressureRecord::class,
+        BloodGlucoseRecord::class
     )
 
     val permissions = changesDataTypes.map { HealthPermission.getReadPermission(it) }.toSet()
